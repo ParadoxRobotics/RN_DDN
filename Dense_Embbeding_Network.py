@@ -100,7 +100,66 @@ class RN_DEN(nn.Module):
 
 # Network instantiation and test
 RN_DEN = RN_DEN(3, ResBlock, [5,5,5,5])
-x = torch.randn(1, 3, 64, 64)
-ht, y = RN_DEN.forward(x)
-print(ht.shape)
-print(y.shape)
+print("RN_DEN STRUCTURE : \n", RN_DEN)
+
+#-------------------------------------------------------------------------------
+#                        Dense Contrastive Loss
+#-------------------------------------------------------------------------------
+
+class ContrastiveLoss(torch.nn.Module):
+    def __init__(self, margin=0.5, non_match_loss_weight=1.0):
+        super(ContrastiveLoss, self).__init__()
+        self.margin = margin
+        self.non_match_loss_weight = non_match_loss_weight
+
+    def forward(self, Out_A, Out_B, match_A, match_B, non_match_A, non_match_B):
+        
+        return loss_contrastive
+
+cost_function = ContrastiveLoss()
+
+#-------------------------------------------------------------------------------
+#                           Optimizer config
+#-------------------------------------------------------------------------------
+
+# SGD optimizer with Nesterow momentum
+optimizer = optim.SGD(RN.parameters(), lr = 0.04,
+                                            momentum = 0.90,
+                                            weight_decay = 0.00001,
+                                            nesterov = True)
+
+# Training parameter
+number_epoch = 50
+# Learning rate scheduler (decreasing polynomial)
+lrPower = 2
+lambda1 = lambda epoch: (1.0 - epoch / number_epoch) ** lrPower
+scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=[lambda1])
+
+#-------------------------------------------------------------------------------
+#                            Learning procedure
+#-------------------------------------------------------------------------------
+
+def train(epoch):
+    RN_DEN.train()
+
+#-------------------------------------------------------------------------------
+#                             test procedure
+#-------------------------------------------------------------------------------
+
+def test():
+    with torch.no_grad():
+        RN_DEN.eval()
+        test_loss = 0
+        correct = 0
+
+#-------------------------------------------------------------------------------
+#                             inference procedure
+#-------------------------------------------------------------------------------
+
+print("START TRAINING : \n")
+for epoch in range(number_epoch):
+    print("START TRAINING epoch <[O_O]> : \n", epoch)
+    train(epoch)
+    scheduler.step()
+    print("\n\n START TESTING...please wait <[°_°]> : \n")
+    test()
