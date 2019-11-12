@@ -112,10 +112,37 @@ class ContrastiveLoss(torch.nn.Module):
         self.margin = margin
         self.non_match_loss_weight = non_match_loss_weight
 
-    def forward(self, Out_A, Out_B, match_A, match_B, non_match_A, non_match_B):
-        
-        return loss_contrastive
+    def forward(self, out_A, Oout_B, match_A, match_B, non_match_A, non_match_B):
+        # out_A, out_B : [1, D, H, W] => [1, H*W, D]
+        # match_A, match_B, non_match_A, non_match_B : [nb_match,] with (u,v)
+        # (u,v) -> image_width * v + u
 
+        # get the number of match/non-match (tensor float)
+        nb_match = match_A.size()[0]
+        nb_non_match = non_match_A.size()[0]
+
+        # create a tensor with the listed matched descriptors in the estimated descriptors map (net output)
+        match_A_des = torch.index_select(out_A, 1, match_A)
+        match_B_des = torch.index_select(out_B, 1, match_B)
+        # create a tensor with the listed non-matched descriptors in the estimated descriptors map (net output)
+        non_match_A_des = torch.index_select(out_A, 1, non_match_A)
+        non_match_B_des = torch.index_select(out_B, 1, non_match_B)
+
+        # calculate match loss (L2 distance)
+        match_loss = (1.0/nb_match) * (match_A_des - match_B_des).pow(2).sum()
+        # calculate non-match loss (pixelwise L2 distance with margin)
+        pixel_wise_loss = (non_match_A_des - non_match_B_des).pow(2).sum(dim=2)
+        pixel_wise_loss = torch.add(torch.neg(pixel_wise_loss), self.margin)
+        zeros_vec = torch.zeros_like(pixel_wise_loss)
+        non_match_loss = self.non_match_loss_weight * (1.0/num_non_matches) * torch.max(zeros_vec, pixel_wise_loss).sum()
+
+        # final contrastive loss
+        contrastive_loss = match_loss + non_match_loss
+
+        # TODO: evaluate size  
+        return contrastive_loss, match_loss, non_match_loss
+
+# init cost function for training
 cost_function = ContrastiveLoss()
 
 #-------------------------------------------------------------------------------
@@ -123,7 +150,7 @@ cost_function = ContrastiveLoss()
 #-------------------------------------------------------------------------------
 
 # SGD optimizer with Nesterow momentum
-optimizer = optim.SGD(RN.parameters(), lr = 0.04,
+optimizer = optim.SGD(RN.parameters(), lr = 0.01,
                                             momentum = 0.90,
                                             weight_decay = 0.00001,
                                             nesterov = True)
