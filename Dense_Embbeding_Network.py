@@ -62,14 +62,20 @@ class RN_DEN(nn.Module):
         self.layer_2 = self.build_block(block, 32, num_block[1], 2)
         self.layer_3 = self.build_block(block, 64, num_block[2], 2)
         self.layer_4 = self.build_block(block, 128, num_block[2], 2)
+        self.layer_5 = self.build_block(block, 256, num_block[2], 2)
+        self.layer_6 = self.build_block(block, 512, num_block[2], 2)
         # Lateral convolutional layer
-        self.lateral_layer_1 = nn.Conv2d(64, 128, kernel_size=1, stride=1, padding=0)
-        self.lateral_layer_2 = nn.Conv2d(32, 128, kernel_size=1, stride=1, padding=0)
-        self.lateral_layer_3 = nn.Conv2d(16, 128, kernel_size=1, stride=1, padding=0)
+        self.lateral_layer_1 = nn.Conv2d(256, 512, kernel_size=1, stride=1, padding=0)
+        self.lateral_layer_2 = nn.Conv2d(128, 512, kernel_size=1, stride=1, padding=0)
+        self.lateral_layer_3 = nn.Conv2d(64, 512, kernel_size=1, stride=1, padding=0)
+        self.lateral_layer_4 = nn.Conv2d(32, 512, kernel_size=1, stride=1, padding=0)
+        self.lateral_layer_5 = nn.Conv2d(16, 512, kernel_size=1, stride=1, padding=0)
         # Bilinear Upsampling
         self.up_1 = nn.Upsample(scale_factor=2, mode='bilinear')
         self.up_2 = nn.Upsample(scale_factor=2, mode='bilinear')
         self.up_3 = nn.Upsample(scale_factor=2, mode='bilinear')
+        self.up_4 = nn.Upsample(scale_factor=2, mode='bilinear')
+        self.up_5 = nn.Upsample(scale_factor=2, mode='bilinear')
 
     def build_block(self, block, out_channel, num_block, stride):
         strides = [stride] + [1]*(num_block-1)
@@ -85,29 +91,34 @@ class RN_DEN(nn.Module):
         out = self.bn_1(out)
         out = F.relu(out)
         # residual processing (fully convolutional)
-        out_1 = self.layer_1(out) # [16, 128, 128]
-        out_2 = self.layer_2(out_1) # [32, 64, 64]
-        out_3 = self.layer_3(out_2) # [64, 32, 32]
-        out_4 = self.layer_4(out_3) # [128, 16, 16]
+        out_1 = self.layer_1(out)
+        out_2 = self.layer_2(out_1)
+        out_3 = self.layer_3(out_2)
+        out_4 = self.layer_4(out_3)
+        out_5 = self.layer_5(out_4)
+        out_6 = self.layer_5(out_6)
         # Upsampling processing
-        out_up_1 = self.up_1(out_4) # [128, 32, 32]
-        out_up_2 = self.up_2(out_up_1 + self.lateral_layer_1(out_3)) # [128, 64, 64]
-        out_up_3 = self.up_3(out_up_2 + self.lateral_layer_2(out_2)) # [128, 128, 128]
-        out_up_4 = out_up_3 + self.lateral_layer_3(out_1) # [128, 128, 128]
+        out_up_1 = self.up_1(out_6)
+        out_up_2 = self.up_2(out_up_1 + self.lateral_layer_1(out_5))
+        out_up_3 = self.up_3(out_up_2 + self.lateral_layer_2(out_4))
+        out_up_4 = self.up_4(out_up_3 + self.lateral_layer_3(out_3))
+        out_up_5 = self.up_5(out_up_4 + self.lateral_layer_4(out_2))
+        out_up_6 = out_up_5 + self.lateral_layer_5(out_1)
         # return hidden + output
         return out_4, out_up_4
 
 
 # Network instantiation and test
-RN_DEN = RN_DEN(3, ResBlock, [5,5,5,5])
+RN_DEN = RN_DEN(3, ResBlock, [5,5,5,5,5,5])
 print("RN_DEN STRUCTURE : \n", RN_DEN)
 
 #-------------------------------------------------------------------------------
 #                        Dense Contrastive Loss
 #-------------------------------------------------------------------------------
 
+
 class ContrastiveLoss(torch.nn.Module):
-    def __init__(self, margin=0.5, non_match_loss_weight=1.0):
+    def __init__(self, margin=0.005, non_match_loss_weight=1.0):
         super(ContrastiveLoss, self).__init__()
         self.margin = margin
         self.non_match_loss_weight = non_match_loss_weight
@@ -134,13 +145,13 @@ class ContrastiveLoss(torch.nn.Module):
         pixel_wise_loss = (non_match_A_des - non_match_B_des).pow(2).sum(dim=2)
         pixel_wise_loss = torch.add(torch.neg(pixel_wise_loss), self.margin)
         zeros_vec = torch.zeros_like(pixel_wise_loss)
-        non_match_loss = self.non_match_loss_weight * (1.0/num_non_matches) * torch.max(zeros_vec, pixel_wise_loss).sum()
+        non_match_loss = self.non_match_loss_weight * (1.0/nb_non_match) * torch.max(zeros_vec, pixel_wise_loss).sum()
 
         # final contrastive loss
         contrastive_loss = match_loss + non_match_loss
 
-        # TODO: evaluate size  
         return contrastive_loss, match_loss, non_match_loss
+
 
 # init cost function for training
 cost_function = ContrastiveLoss()
@@ -182,6 +193,7 @@ def test():
 #-------------------------------------------------------------------------------
 #                             inference procedure
 #-------------------------------------------------------------------------------
+
 
 print("START TRAINING : \n")
 for epoch in range(number_epoch):
