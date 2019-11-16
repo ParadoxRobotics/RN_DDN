@@ -33,7 +33,7 @@ H = torch.eye(4).type(torch.FloatTensor)
 image_ref = cv2.imread()
 image_cur = cv2.imread()
 
-# get reference and current Depth (640x480x1 pixels)
+# get reference and current Depth (640x480 pixels)
 depth_ref = cv2.imread()
 depth_ref = cv2.imread()
 
