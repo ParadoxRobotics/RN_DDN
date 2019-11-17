@@ -1,6 +1,6 @@
 # RN_DEN
 
-![Screenshot](logo_rn_den.png)
+# ![Screenshot](logo_rn_den.png)
 
 This is a Pytorch implementation of dense correspondence network (dense object descriptor) for robot manipulation and keyframe based navigation.
 
