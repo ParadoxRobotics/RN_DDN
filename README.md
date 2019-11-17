@@ -1,5 +1,7 @@
 # RN_DEN
 
+![Screenshot](logo_rn_den.jpg)
+
 This is a Pytorch implementation of dense correspondence network (dense object descriptor) for robot manipulation and keyframe based navigation.
 
 The code is based on the ResNet34 feature extraction encoder and the RetinaNet conv2D/upsamplig decoder. 
