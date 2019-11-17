@@ -1,4 +1,3 @@
-# RN_DEN
 
 # ![Screenshot](logo_rn_den.png)
 
