@@ -38,38 +38,70 @@ depth_ref = cv2.imread()
 depth_ref = cv2.imread()
 
 class Generate_Correspondence(torch.nn.Module):
-    def __init__(self, distortion_mat, intrinsic_mat, number_match):
+    def __init__(self, distortion_mat, intrinsic_mat, depth_scale, depth_margin, number_match):
         super(Generate_Correspondence, self).__init__()
         self.distortion_mat = distortion_mat
         self.intrinsic_mat = intrinsic_mat
+        self.depth_scale = depth_scale
+        self.depth_margin = depth_margin
         self.number_match = number_match
 
     def RGBD_matching(in_A, depth_A, in_B, depth_B, transformation):
         # Image and depth map need to aligned :
         # in_A/in_B -> [H,W,C]
         # depth_A/depth_B -> [H,W]
+
+        # Init match list
+        valid_match_A = []
+        valid_match_B = []
+
+        # Init 3D point
+        Pt_A = torch.zeros(4,1).type(torch.FloatTensor)
+        Pt_A[3,0] = 1
+        Pt_B = torch.zeros(4,1).type(torch.FloatTensor)
+        Pt_B[3,0] = 1
+
+        # Init (u,v) point
+        uv_A = torch.zeros(2).type(torch.IntTensor)
+        uv_B = torch.zeros(2).type(torch.IntTensor)
+
         for i in range(0,self.number_match):
             # Generate random point in the [uA,vA] space
-
-            # Evaluate depth (DA=0! or Dmin<DA<Dmax)
-
-            # Generate [xA,yA,zA] points (camera parameters + depth)
-
+            uv_A[0] = randint(0, in_A.size(0))
+            uv_A[1] = randint(0, in_A.size(1))
+            # Evaluate depth (DA=0!)
+            if depth_A[uv_A[0], uv_A[1]] > 0:
+                # Generate [xA,yA,zA] points (camera parameters + depth)
+                Pt_A[2,0] = depth_A[uv_A[0], uv_A[1]]/self.depth_scale
+                Pt_A[0,0] = (uv_A[0]-self.intrinsic_mat[0,2])*(Pt_A[2,0]/self.intrinsic_mat[0,0])
+                Pt_A[1,0] = (uv_A[1]-self.intrinsic_mat[1,2])*(Pt_A[2,0]/self.intrinsic_mat[1,1])
+            else:
+                continue
             # Calculate in world cordinate the projected point in in_B + depth_B with H matrix
+            Pt_B = torch.mm(H, Pt_A)
 
-            # Evaluate depth (DB=0! or Dmin<DB<Dmax)
+            # Calculate [xB,yB,zB] point in [uB,vB] space
+            uv_B[0] =((self.intrinsic_mat[0,0]*Pt_B[0,0])/Pt_B[2,0])+self.intrinsic_mat[0,2]
+            uv_B[1] =((self.intrinsic_mat[0,0]*Pt_B[1,0])/Pt_B[2,0])+self.intrinsic_mat[1,2]
 
-            # Calculate [xB,yB,zB] point in [uB, vB]
+            # Evaluate frustum consistency, depth = 0! and occlusion
+            if uv_B[0] <= in_B.size(0) or uv_B[0] >= 0 or uv_B[1] <= in_B.size(1) or uv_B[1] <= 0 or depth_B[uv_B[0], uv_B[1]] > 0 or
+            depth_B[uv_B[0], uv_B[1]] <= Pt_B[2,0]+self.margin or depth_B[uv_B[0], uv_B[1]] >= Pt_B[2,0]-self.margin:
+                # store good match in list
+                valid_match_A.append(uv_A)
+                valid_match_B.append(uv_B)
+            else:
+                continue
 
-            # Evaluate frustum consistency (no outher bound)
+        # return all match in image A et image B
+        return valid_match_A, valid_match_B
 
-            # Occlusion ?
-
-            # store match_A = [uA, vA] and match_B = [uB, vB]
-
-            # return all match
 
     def RGBD_non_match(in_A, depth_A, in_B, depth_B, transformation):
-            # Image and depth map need to aligned :
-            # in_A/in_B -> [H,W,C]
-            # depth_A/depth_B -> [H,W]
+        # Image and depth map need to aligned :
+        # in_A/in_B -> [H,W,C]
+        # depth_A/depth_B -> [H,W]
+
+        # Init non-match list
+        non_valid_match_A = []
+        non_valid_match_B = []
