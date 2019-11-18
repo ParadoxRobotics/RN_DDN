@@ -159,17 +159,132 @@ class ContrastiveLoss(torch.nn.Module):
 cost_function = ContrastiveLoss()
 
 #-------------------------------------------------------------------------------
+#                        match / non_match finder
+#-------------------------------------------------------------------------------
+
+class Generate_Correspondence(torch.nn.Module):
+    def __init__(self, intrinsic_mat, depth_scale, depth_margin, number_match, number_non_match):
+        super(Generate_Correspondence, self).__init__()
+        self.intrinsic_mat = intrinsic_mat
+        self.depth_scale = depth_scale
+        self.depth_margin = depth_margin
+        self.number_match = number_match
+        self.number_non_match = number_non_match
+
+    def RGBD_matching(in_A, depth_A, in_B, depth_B, transformation):
+        # Image and depth map need to aligned :
+        #  - in_A/in_B -> [H,W,C]
+        #  - depth_A/depth_B -> [H,W]
+
+        # Init match list
+        valid_match_A = []
+        valid_match_B = []
+
+        # Init 3D point
+        Pt_A = torch.zeros(4,1).type(torch.FloatTensor)
+        Pt_A[3,0] = 1
+        Pt_B = torch.zeros(4,1).type(torch.FloatTensor)
+        Pt_B[3,0] = 1
+
+        # Init (u,v) point
+        uv_A = torch.zeros(2).type(torch.IntTensor)
+        uv_B = torch.zeros(2).type(torch.IntTensor)
+
+        for i in range(0,self.number_match):
+            # Generate random point in the [uA,vA] space
+            uv_A[0] = randint(0, in_A.size(0))
+            uv_A[1] = randint(0, in_A.size(1))
+            # Evaluate depth (DA>0)
+            if depth_A[uv_A[0], uv_A[1]] > 0:
+                # Generate [xA,yA,zA] points (camera parameters + depth)
+                Pt_A[2,0] = depth_A[uv_A[0], uv_A[1]]/self.depth_scale
+                Pt_A[0,0] = (uv_A[0]-self.intrinsic_mat[0,2])*(Pt_A[2,0]/self.intrinsic_mat[0,0])
+                Pt_A[1,0] = (uv_A[1]-self.intrinsic_mat[1,2])*(Pt_A[2,0]/self.intrinsic_mat[1,1])
+            else:
+                continue
+            # Calculate in world cordinate the projected point in in_B + depth_B with H matrix
+            Pt_B = torch.mm(H, Pt_A)
+
+            # Calculate [xB,yB,zB] point in [uB,vB] space
+            uv_B[0] =((self.intrinsic_mat[0,0]*Pt_B[0,0])/Pt_B[2,0])+self.intrinsic_mat[0,2]
+            uv_B[1] =((self.intrinsic_mat[0,0]*Pt_B[1,0])/Pt_B[2,0])+self.intrinsic_mat[1,2]
+
+            # Evaluate frustum consistency, depth DB > 0 and occlusion
+            if (uv_B[0]<=in_B.size(0)) and (uv_B[0]>=0) and (uv_B[1]<=in_B.size(1)) and (uv_B[1]>=0) and (depth_B[uv_B[0],uv_B[1]]>0) and depth_B[uv_B[0], uv_B[1]] >= Pt_B[2,0]-self.margin:
+                # store good match in list
+                valid_match_A.append(uv_A)
+                valid_match_B.append(uv_B)
+            else:
+                continue
+        # return all match in image A and image B
+        return valid_match_A, valid_match_B
+
+
+    def RGBD_non_match(in_A, depth_A, in_B, depth_B, transformation):
+        # Image and depth map need to aligned :
+        #  - in_A / in_B -> [H,W,C]
+        #  - depth_A / depth_B -> [H,W]
+
+        # Init non-match list
+        non_valid_match_A = []
+        non_valid_match_B = []
+
+        # Init (u,v) point
+        uv_A = torch.zeros(2).type(torch.IntTensor)
+        uv_B = torch.zeros(2).type(torch.IntTensor)
+
+        for i in range(0,self.number_non_match):
+            # Generate random point in the [uA,vA] space
+            uv_A[0] = randint(0, in_A.size(0))
+            uv_A[1] = randint(0, in_A.size(1))
+            # Evaluate depth (DA>0)
+            if depth_A[uv_A[0], uv_A[1]] > 0:
+                # Generate random point in the [uB,vB] space
+                uv_B[0] = randint(0, in_B.size(0))
+                uv_B[1] = randint(0, in_B.size(1))
+                # Evaluate depth (DB>0)
+                if (depth_B[uv_B[0], uv_B[1]]>0):
+                    # store good non-match in list
+                    non_valid_match_A.append(uv_A)
+                    non_valid_match_B.append(uv_B)
+                else:
+                    continue
+            else:
+                continue
+        # return all non-match in image A and image B
+        return non_valid_match_A, non_valid_match_B
+
+# correspondence generator parameter init
+# Camera intrinsic parameters
+fx = 384.996
+fy = 384.996
+cx = 325.85
+cy = 237.646
+# camera intrinsic matrix
+intrinsic_mat = torch.tensor([[fx,0,cx],[0,fy,cy],[0,0,1]]).type(torch.FloatTensor)
+# scale factor for the depth map
+depth_scale = 1
+# margin for occlusion evaluation
+depth_margin = 0.003
+# number (max) of match / non_match to generate
+number_match = 5000
+number_non_match = 100
+
+# init correspondence_generator
+correspondence_generator = Generate_Correspondence(intrinsic_mat, depth_scale, depth_margin, number_match, number_non_match)
+
+#-------------------------------------------------------------------------------
 #                           Optimizer config
 #-------------------------------------------------------------------------------
 
-# SGD optimizer with Nesterow momentum
+# SGD optimizer with Nesterov momentum
 optimizer = optim.SGD(RN.parameters(), lr = 0.01,
                                             momentum = 0.90,
                                             weight_decay = 0.00001,
                                             nesterov = True)
 
 # Training parameter
-number_epoch = 50
+number_epoch = 10
 # Learning rate scheduler (decreasing polynomial)
 lrPower = 2
 lambda1 = lambda epoch: (1.0 - epoch / number_epoch) ** lrPower
@@ -180,7 +295,9 @@ scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=[lambda1])
 #-------------------------------------------------------------------------------
 
 def train(epoch):
+    # enable training
     RN_DEN.train()
+    i = 0 # to know the pass number between epoch
 
 #-------------------------------------------------------------------------------
 #                             test procedure
@@ -199,8 +316,8 @@ def test():
 
 print("START TRAINING : \n")
 for epoch in range(number_epoch):
-    print("START TRAINING epoch <[O_O]> : \n", epoch)
+    print("START TRAINING <[-_-]> epoch : \n", epoch)
     train(epoch)
     scheduler.step()
-    print("\n\n START TESTING...please wait <[°_°]> : \n")
+    print("\n\n START TESTING...please wait <[o_o]> : \n")
     test()
