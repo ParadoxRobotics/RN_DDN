@@ -17,7 +17,7 @@ from torchvision import datasets, transforms, utils
 import torchvision.models as models
 from collections import OrderedDict
 
-
+#TODO : REWRITE THE CORRESPONDENCE CODE !
 class Generate_Correspondence(torch.nn.Module):
     def __init__(self, distortion_mat, intrinsic_mat, depth_scale, depth_margin, number_match, number_non_match):
         super(Generate_Correspondence, self).__init__()
