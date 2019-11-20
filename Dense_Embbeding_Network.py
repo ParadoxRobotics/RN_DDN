@@ -153,6 +153,7 @@ class ContrastiveLoss(torch.nn.Module):
         # final contrastive loss
         contrastive_loss = match_loss + non_match_loss
 
+        # return final loss and each component
         return contrastive_loss, match_loss, non_match_loss
 
 # init cost function for training
@@ -171,7 +172,7 @@ class Generate_Correspondence(torch.nn.Module):
         self.number_match = number_match
         self.number_non_match = number_non_match
 
-    def RGBD_matching(in_A, depth_A, pose_A, in_B, depth_B, pose_B):
+    def RGBD_matching(self, in_A, depth_A, pose_A, in_B, depth_B, pose_B):
         # Image and depth map need to aligned :
         #  - in_A/in_B -> [H,W,C]
         #  - depth_A/depth_B -> [H,W]
@@ -195,11 +196,10 @@ class Generate_Correspondence(torch.nn.Module):
         uv_A = torch.zeros(2).type(torch.IntTensor)
         uv_B = torch.zeros(2).type(torch.IntTensor)
 
-
         for i in range(0,self.number_match):
             # Generate random point in the [uA,vA] image space
-            uv_A[0] = randint(0, in_A.size(0))
-            uv_A[1] = randint(0, in_A.size(1))
+            uv_A[0] = randint(0, in_A.size(0)-1)
+            uv_A[1] = randint(0, in_A.size(1)-1)
             # Evaluate depth (DA>0)
             if depth_A[uv_A[0], uv_A[1]] > 0:
                 # Generate [xA,yA,zA] points (camera parameters + depth)
@@ -209,27 +209,24 @@ class Generate_Correspondence(torch.nn.Module):
             else:
                 continue
             # Calculate in world coordinate the point Pt_A (camera frame -> world frame)
-            Pt_AW = torch.mm(pose_A, Pt_A)
-
+            Pt_W = torch.mm(pose_A, Pt_A)
             # calculate in camera coordinate the point Pt_B (world frame -> camera frame)
-            Pt_B = torch.mm(torch.inverse(pose_B), Pt_AW)
-
+            Pt_B = torch.mm(torch.inverse(pose_B), Pt_W)
             # Calculate [xB,yB,zB] point in [uB,vB] image space
             uv_B[0] =((self.intrinsic_mat[0,0]*Pt_B[0,0])/Pt_B[2,0])+self.intrinsic_mat[0,2]
-            uv_B[1] =((self.intrinsic_mat[0,0]*Pt_B[1,0])/Pt_B[2,0])+self.intrinsic_mat[1,2]
-
+            uv_B[1] =((self.intrinsic_mat[1,1]*Pt_B[1,0])/Pt_B[2,0])+self.intrinsic_mat[1,2]
             # Evaluate frustum consistency, depth DB > 0 and occlusion
-            if (uv_B[0]<=in_B.size(0)) and (uv_B[0]>=0) and (uv_B[1]<=in_B.size(1)) and (uv_B[1]>=0) and (depth_B[uv_B[0],uv_B[1]]>0) and depth_B[uv_B[0], uv_B[1]] >= Pt_B[2,0]-self.margin:
+            if (uv_B[0]<in_B.size(0)) and (uv_B[0]>0) and (uv_B[1]<in_B.size(1)) and (uv_B[1]>0) and (depth_B[uv_B[0],uv_B[1]]>0) and depth_B[uv_B[0], uv_B[1]] >= Pt_B[2,0]-depth_margin:
                 # store good match in list
-                valid_match_A.append(uv_A)
-                valid_match_B.append(uv_B)
+                valid_match_A.append(copy.deepcopy(uv_A))
+                valid_match_B.append(copy.deepcopy(uv_B))
             else:
                 continue
         # return all match in image A and image B
         return valid_match_A, valid_match_B
 
 
-    def RGBD_non_match(valid_match_A, valid_match_B):
+    def RGBD_non_match(self, valid_match_A, valid_match_B):
         # Image and depth map need to aligned :
         #  - in_A / in_B -> [H,W,C]
         #  - depth_A / depth_B -> [H,W]
@@ -240,14 +237,15 @@ class Generate_Correspondence(torch.nn.Module):
 
         for i in range(0,self.number_non_match):
             # sample random point from good match in image A and image B
-            index_A = randint(0, valid_match_A.size(0))
-            index_B = randint(0, valid_match_B.size(0))
+            index_A = randint(0, len(valid_match_A)-1)
+            index_B = randint(0, len(valid_match_B)-1)
             # store the point in list
-            non_valid_match_A.append(valid_match_A[index_A])
-            non_valid_match_B.append(valid_match_B[index_B])
+            non_valid_match_A.append(copy.deepcopy(valid_match_A[index_A]))
+            non_valid_match_B.append(copy.deepcopy(valid_match_B[index_B]))
 
         # return all non-match in image A and image B
         return non_valid_match_A, non_valid_match_B
+
 
 # correspondence generator parameter init
 # Camera intrinsic parameters
