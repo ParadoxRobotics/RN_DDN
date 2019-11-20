@@ -2,6 +2,7 @@
 from __future__ import print_function
 import numpy as np
 import matplotlib.pyplot as plt
+import copy
 
 import torch
 import torch.nn as nn
