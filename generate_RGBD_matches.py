@@ -30,8 +30,8 @@ class Generate_Correspondence(torch.nn.Module):
 
     def RGBD_matching(self, in_A, depth_A, pose_A, in_B, depth_B, pose_B):
         # Image and depth map need to aligned :
-        #  - in_A/in_B -> [H,W,C]
-        #  - depth_A/depth_B -> [H,W]
+        #  - in_A/in_B -> [W,H,C] 640x480x3
+        #  - depth_A/depth_B -> [W,H] 640x480
 
         # Init match list
         valid_match_A = []
@@ -143,6 +143,6 @@ correspondence_generator = Generate_Correspondence(CIP, depth_scale, depth_margi
 
 # generate correspondence
 match_A, match_B = correspondence_generator.RGBD_matching(image_ref, depth_ref, Pose_A, image_cur, depth_cur, Pose_B)
-
+print(match_A)
 # generate non_match
 non_match_A, non_match_B = correspondence_generator.RGBD_non_match(match_A, match_B)
