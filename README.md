@@ -1,5 +1,5 @@
 
-# ![Screenshot](logo_rn_den.png)
+# ResNet-34 based Dense Descriptor Embedding Network
 
 This is a Pytorch implementation of dense correspondence network (dense object descriptor) for robot manipulation and keyframe based navigation.
 
