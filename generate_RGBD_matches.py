@@ -43,7 +43,7 @@ class Generate_Correspondence():
         uv_A = np.zeros(2, dtype="int")
         uv_B = np.zeros(2, dtype="int")
 
-        for i in range(0, self.number_match):
+        while len(valid_match_A) != self.number_match:
             if mask == None:
                 # Generate random point in the [uA,vA] image space
                 random.seed(time.clock())
@@ -59,25 +59,19 @@ class Generate_Correspondence():
             if depth_A[uv_A[0], uv_A[1]] > 0:
                 # Generate [xA,yA,zA] points (camera parameters + depth)
                 Pt_A[2,0] = depth_A[uv_A[0], uv_A[1]]/self.depth_scale
-                Pt_A[0,0] = (uv_A[1]-self.intrinsic_mat[0,2])*(Pt_A[2,0]/self.intrinsic_mat[0,0])
-                Pt_A[1,0] = (uv_A[0]-self.intrinsic_mat[1,2])*(Pt_A[2,0]/self.intrinsic_mat[1,1])
+                Pt_A[0,0] = ((uv_A[1]-self.intrinsic_mat[0,2])*Pt_A[2,0])/self.intrinsic_mat[0,0]
+                Pt_A[1,0] = ((uv_A[0]-self.intrinsic_mat[1,2])*Pt_A[2,0])/self.intrinsic_mat[1,1]
             else:
                 continue
-            """
-            # Calculate in world coordinate the point Pt_A (camera frame -> world frame)
-            Pt_W = np.dot(pose_A, Pt_A)
-            # calculate in camera coordinate the point Pt_B (world frame -> camera frame)
-            Pt_B = np.dot(np.linalg.inv(pose_B), Pt_W)
-            """
             # calculate transform
-            TF = np.dot(pose_B, pose_A)
+            TF = np.dot(np.linalg.inv(pose_B), pose_A)
             Pt_B = np.dot(TF, Pt_A)
 
             # Calculate [xB,yB,zB] point in [uB,vB] image space
             uv_B[1] = ((self.intrinsic_mat[0,0]*Pt_B[0,0])/Pt_B[2,0])+self.intrinsic_mat[0,2]
             uv_B[0] = ((self.intrinsic_mat[1,1]*Pt_B[1,0])/Pt_B[2,0])+self.intrinsic_mat[1,2]
             # Evaluate frustum consistency, depth DB > 0 and occlusion
-            if (uv_B[0]<in_B.shape[0]) and (uv_B[0]>0) and (uv_B[1]<in_B.shape[1]) and (uv_B[1]>0) and (depth_B[uv_B[0],uv_B[1]]>0) and depth_B[uv_B[0], uv_B[1]] >= Pt_B[2,0]-depth_margin:
+            if (uv_B[0]<in_B.shape[0]) and (uv_B[0]>0) and (uv_B[1]<in_B.shape[1]) and (uv_B[1]>0) and (depth_B[uv_B[0],uv_B[1]]/self.depth_scale>0) and depth_B[uv_B[0], uv_B[1]]/self.depth_scale >= Pt_B[2,0]-depth_margin:
                 # store good match in list
                 valid_match_A.append(copy.deepcopy(uv_A))
                 valid_match_B.append(copy.deepcopy(uv_B))
@@ -96,7 +90,7 @@ class Generate_Correspondence():
         non_valid_match_A = []
         non_valid_match_B = []
 
-        for i in range(0,self.number_non_match):
+        while len(non_valid_match_A) != self.number_non_match:
             # sample random point from good match in image A and image B
             random.seed(time.clock())
             index_A = randint(0, len(valid_match_A)-1)
@@ -115,8 +109,8 @@ class Generate_Correspondence():
 # Parameters init
 depth_margin = 0.003 # in meter
 depth_scale = 1000
-nb_match = 145
-nb_non_match = 10
+nb_match = 100
+nb_non_match = 0
 
 # Camera intrinsic parameters
 fx = 5.40021232e+02
@@ -130,18 +124,13 @@ CIP = np.array([(fx,0,cx),(0,fy,cy),(0,0,1)], dtype="float32")
 image_ref = cv2.imread("Test_correspondence/RGB_A.png",cv2.IMREAD_COLOR)
 image_cur = cv2.imread("Test_correspondence/RGB_B.png",cv2.IMREAD_COLOR)
 
-
-plt.imshow(image_ref)
-plt.title("point used")
-plt.show()
-
 # get reference and current Depth (HxW pixels)
 depth_ref = cv2.imread("Test_correspondence/Depth_A.png",cv2.COLOR_BGR2GRAY)
 depth_cur = cv2.imread("Test_correspondence/Depth_B.png",cv2.COLOR_BGR2GRAY)
 
 # init camera world pose (homogeneous transformation matrix)
-Pose_A = np.array([(9.99995766e-01,-1.88792221e-03,-2.21453870e-03,2.50915000e-05),(1.89050428e-03,9.99997535e-01,1.16444747e-03,9.32049000e-04),(2.21233485e-03,-1.16862913e-03,9.99996870e-01,5.66633000e-04),(0.00000000e+00,0.00000000e+00,0.00000000e+00,1.00000000e+00)], dtype="float32")
-Pose_B = np.array([(9.93902221e-01,-5.48237322e-02,9.56699229e-02,-9.47249000e-02),(5.16109152e-02,9.98027483e-01,3.57415172e-02,-7.40755000e-02),(-9.74406958e-02,-3.05859610e-02,9.94771235e-01,6.08678000e-02),(0.00000000e+00,0.00000000e+00,0.00000000e+00,1.00000000e+00)], dtype="float32")
+Pose_B = np.array([(9.99995766e-01,-1.88792221e-03,-2.21453870e-03,2.50915000e-05),(1.89050428e-03,9.99997535e-01,1.16444747e-03,9.32049000e-04),(2.21233485e-03,-1.16862913e-03,9.99996870e-01,5.66633000e-04),(0.00000000e+00,0.00000000e+00,0.00000000e+00,1.00000000e+00)], dtype="float32")
+Pose_A = np.array([(9.93902221e-01,-5.48237322e-02,9.56699229e-02,-9.47249000e-02),(5.16109152e-02,9.98027483e-01,3.57415172e-02,-7.40755000e-02),(-9.74406958e-02,-3.05859610e-02,9.94771235e-01,6.08678000e-02),(0.00000000e+00,0.00000000e+00,0.00000000e+00,1.00000000e+00)], dtype="float32")
 
 # init correspondence finder
 correspondence_generator = Generate_Correspondence(CIP, depth_scale, depth_margin, nb_match, nb_non_match)
