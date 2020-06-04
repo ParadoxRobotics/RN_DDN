@@ -50,7 +50,11 @@ class Generate_Correspondence():
                 uv_A[0] = randint(0, in_A.shape[0]-1) # H
                 uv_A[1] = randint(0, in_A.shape[1]-1) # W
             else:
-                print("TODO")
+                random.seed(time.clock())
+                um, vm = np.where(mask == 0)
+                id = np.random.randint(len(um))
+                uv_A[0] = um[id] # H
+                uv_A[1] = vm[id] # W
             # Evaluate depth (DA>0)
             if depth_A[uv_A[0], uv_A[1]] > 0:
                 # Generate [xA,yA,zA] points (camera parameters + depth)
@@ -145,8 +149,8 @@ correspondence_generator = Generate_Correspondence(CIP, depth_scale, depth_margi
 # generate correspondence
 
 match_A, match_B = correspondence_generator.RGBD_matching(image_ref, depth_ref, Pose_A, image_cur, depth_cur, Pose_B, mask=None)
-print("match in A = ", match_A)
-print("match in B = ", match_B)
+print("match in A = ", len(match_A))
+print("match in B = ", len(match_B))
 # print image match
 for i in range(0, len(match_A)):
     image_ref = cv2.circle(image_ref, (match_A[i][0], match_A[i][1]), 2, (255, 0, 0), 2)
@@ -161,8 +165,8 @@ plt.show()
 
 # generate non_match
 non_match_A, non_match_B = correspondence_generator.RGBD_non_match(match_A, match_B)
-print("non_match in A = ", non_match_A)
-print("non_match in B = ", non_match_B)
+print("non_match in A = ", len(non_match_A))
+print("non_match in B = ", len(non_match_B))
 # print image non_match
 for i in range(0, len(non_match_A)):
     image_ref = cv2.circle(image_ref, (non_match_A[i][0], non_match_A[i][1]), 2, (0, 0, 255), 2)
