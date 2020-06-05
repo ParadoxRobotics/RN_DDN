@@ -1,4 +1,3 @@
-
 from __future__ import print_function
 import math
 import copy
@@ -46,13 +45,14 @@ class Generate_Correspondence():
         while len(valid_match_A) != self.number_match:
             if mask == None:
                 # Generate random point in the [uA,vA] image space
-                random.seed(time.clock())
-                uv_A[0] = randint(0, in_A.shape[0]-1) # H
-                uv_A[1] = randint(0, in_A.shape[1]-1) # W
+                randval = np.random.rand(2)
+                uv_A[0] = np.floor(randval[0]*in_A.shape[0]) # H
+                uv_A[1] = np.floor(randval[1]*in_A.shape[1]) # W
             else:
                 random.seed(time.clock())
                 um, vm = np.where(mask == 0)
-                id = np.random.randint(len(um))
+                randval = np.random.rand(1)
+                id = int(np.floor(randval[0]*len(um)))
                 uv_A[0] = um[id] # H
                 uv_A[1] = vm[id] # W
             # Evaluate depth (DA>0)
@@ -63,15 +63,17 @@ class Generate_Correspondence():
                 Pt_A[1,0] = ((uv_A[0]-self.intrinsic_mat[1,2])*Pt_A[2,0])/self.intrinsic_mat[1,1]
             else:
                 continue
+
             # calculate transform
-            TF = np.dot(np.linalg.inv(pose_B), pose_A)
-            Pt_B = np.dot(TF, Pt_A)
+            Pt_WA = np.dot(pose_A, Pt_A) # position camera frame A in the world frame
+            Pt_BW = np.dot(np.linalg.inv(pose_B), Pt_WA) # world frame to camera frame B
 
             # Calculate [xB,yB,zB] point in [uB,vB] image space
-            uv_B[1] = ((self.intrinsic_mat[0,0]*Pt_B[0,0])/Pt_B[2,0])+self.intrinsic_mat[0,2]
-            uv_B[0] = ((self.intrinsic_mat[1,1]*Pt_B[1,0])/Pt_B[2,0])+self.intrinsic_mat[1,2]
+            uv_B[1] = ((self.intrinsic_mat[0,0]*Pt_BW[0,0])/Pt_BW[2,0])+self.intrinsic_mat[0,2]
+            uv_B[0] = ((self.intrinsic_mat[1,1]*Pt_BW[1,0])/Pt_BW[2,0])+self.intrinsic_mat[1,2]
+
             # Evaluate frustum consistency, depth DB > 0 and occlusion
-            if (uv_B[0]<in_B.shape[0]) and (uv_B[0]>0) and (uv_B[1]<in_B.shape[1]) and (uv_B[1]>0) and (depth_B[uv_B[0],uv_B[1]]/self.depth_scale>0) and depth_B[uv_B[0], uv_B[1]]/self.depth_scale >= Pt_B[2,0]-depth_margin:
+            if (uv_B[0]<in_B.shape[0]) and (uv_B[0]>0) and (uv_B[1]<in_B.shape[1]) and (uv_B[1]>0) and (depth_B[uv_B[0],uv_B[1]]>0) and depth_B[uv_B[0], uv_B[1]]/self.depth_margin >= Pt_B[2,0]-depth_margin:
                 # store good match in list
                 valid_match_A.append(copy.deepcopy(uv_A))
                 valid_match_B.append(copy.deepcopy(uv_B))
@@ -92,9 +94,9 @@ class Generate_Correspondence():
 
         while len(non_valid_match_A) != self.number_non_match:
             # sample random point from good match in image A and image B
-            random.seed(time.clock())
-            index_A = randint(0, len(valid_match_A)-1)
-            index_B = randint(0, len(valid_match_B)-1)
+            randval = np.random.rand(2)
+            index_A = int(np.floor(randval[0]*len(valid_match_A)))
+            index_B = int(np.floor(randval[1]*len(valid_match_B)))
             # store the point in list
             non_valid_match_A.append(copy.deepcopy(valid_match_A[index_A]))
             non_valid_match_B.append(copy.deepcopy(valid_match_B[index_B]))
@@ -109,8 +111,8 @@ class Generate_Correspondence():
 # Parameters init
 depth_margin = 0.003 # in meter
 depth_scale = 1000
-nb_match = 100
-nb_non_match = 0
+nb_match = 10
+nb_non_match = 2
 
 # Camera intrinsic parameters
 fx = 5.40021232e+02
