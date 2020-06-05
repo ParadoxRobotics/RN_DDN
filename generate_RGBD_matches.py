@@ -73,10 +73,12 @@ class Generate_Correspondence():
             uv_B[0] = ((self.intrinsic_mat[1,1]*Pt_BW[1,0])/Pt_BW[2,0])+self.intrinsic_mat[1,2]
 
             # Evaluate frustum consistency, depth DB > 0 and occlusion
-            if (uv_B[0]<in_B.shape[0]) and (uv_B[0]>0) and (uv_B[1]<in_B.shape[1]) and (uv_B[1]>0) and (depth_B[uv_B[0],uv_B[1]]>0) and depth_B[uv_B[0], uv_B[1]]/self.depth_margin >= Pt_B[2,0]-depth_margin:
-                # store good match in list
-                valid_match_A.append(copy.deepcopy(uv_A))
-                valid_match_B.append(copy.deepcopy(uv_B))
+            if (uv_B[0]<in_B.shape[0]) and (uv_B[0]>0) and (uv_B[1]<in_B.shape[1]) and (uv_B[1]>0):
+                if (depth_B[uv_B[0],uv_B[1]]>0) and depth_B[uv_B[0], uv_B[1]]/self.depth_margin >= Pt_B[2,0]-depth_margin :
+                    valid_match_A.append(copy.deepcopy(uv_A))
+                    valid_match_B.append(copy.deepcopy(uv_B))
+                else:
+                    continue
             else:
                 continue
         # return all match in image A and image B
@@ -111,8 +113,8 @@ class Generate_Correspondence():
 # Parameters init
 depth_margin = 0.003 # in meter
 depth_scale = 1000
-nb_match = 10
-nb_non_match = 2
+nb_match = 1
+nb_non_match = 1
 
 # Camera intrinsic parameters
 fx = 5.40021232e+02
@@ -140,12 +142,12 @@ correspondence_generator = Generate_Correspondence(CIP, depth_scale, depth_margi
 # generate correspondence
 
 match_A, match_B = correspondence_generator.RGBD_matching(image_ref, depth_ref, Pose_A, image_cur, depth_cur, Pose_B, mask=None)
-print("match in A = ", len(match_A))
-print("match in B = ", len(match_B))
+print("match in A = ", match_A)
+print("match in B = ", match_B)
 # print image match
 for i in range(0, len(match_A)):
-    image_ref = cv2.circle(image_ref, (match_A[i][0], match_A[i][1]), 2, (255, 0, 0), 2)
-    image_cur = cv2.circle(image_cur, (match_B[i][0], match_B[i][1]), 2, (255, 0, 0), 2)
+    image_ref = cv2.circle(image_ref, (match_A[i][0], match_A[i][1]), 8, (255, 0, 0), 2)
+    image_cur = cv2.circle(image_cur, (match_B[i][0], match_B[i][1]), 8, (255, 0, 0), 2)
 
 plt.imshow(image_ref)
 plt.title("point used")
@@ -162,10 +164,3 @@ print("non_match in B = ", len(non_match_B))
 for i in range(0, len(non_match_A)):
     image_ref = cv2.circle(image_ref, (non_match_A[i][0], non_match_A[i][1]), 2, (0, 0, 255), 2)
     image_cur = cv2.circle(image_cur, (non_match_B[i][0], non_match_B[i][1]), 2, (0, 0, 255), 2)
-
-plt.imshow(image_ref)
-plt.title("point used")
-plt.show()
-plt.imshow(image_cur)
-plt.title("point used")
-plt.show()
