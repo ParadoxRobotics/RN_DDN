@@ -49,7 +49,6 @@ class Generate_Correspondence():
                 uv_A[0] = np.floor(randval[0]*in_A.shape[0]) # H
                 uv_A[1] = np.floor(randval[1]*in_A.shape[1]) # W
             else:
-                random.seed(time.clock())
                 um, vm = np.where(mask == 0)
                 randval = np.random.rand(1)
                 id = int(np.floor(randval[0]*len(um)))
