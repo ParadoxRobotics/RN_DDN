@@ -74,7 +74,7 @@ class Generate_Correspondence():
 
             # Evaluate frustum consistency, depth DB > 0 and occlusion
             if (uv_B[0]<in_B.shape[0]) and (uv_B[0]>0) and (uv_B[1]<in_B.shape[1]) and (uv_B[1]>0):
-                if (depth_B[uv_B[0],uv_B[1]]>0) and depth_B[uv_B[0], uv_B[1]]/self.depth_margin >= Pt_B[2,0]-depth_margin :
+                if (depth_B[uv_B[0],uv_B[1]]>0) and depth_B[uv_B[0], uv_B[1]]/self.depth_margin > Pt_B[2,0]-depth_margin:
                     valid_match_A.append(copy.deepcopy(uv_A))
                     valid_match_B.append(copy.deepcopy(uv_B))
                 else:
@@ -111,10 +111,10 @@ class Generate_Correspondence():
 #-------------------------------------------------------------------------------
 
 # Parameters init
-depth_margin = 0.003 # in meter
+depth_margin = 0.03 # in meter
 depth_scale = 1000
-nb_match = 1
-nb_non_match = 1
+nb_match = 10
+nb_non_match = 0
 
 # Camera intrinsic parameters
 fx = 5.40021232e+02
