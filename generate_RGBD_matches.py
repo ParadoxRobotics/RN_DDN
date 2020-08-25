@@ -64,8 +64,8 @@ class Generate_Correspondence():
                 continue
 
             # calculate transform
-            Pt_WA = np.dot(pose_A, Pt_A) # position camera frame A in the world frame
-            Pt_BW = np.dot(np.linalg.inv(pose_B), Pt_WA) # world frame to camera frame B
+            Pt_WA = np.dot(pose_B, Pt_A) # position camera frame A in the world frame
+            Pt_BW = np.dot(np.linalg.inv(pose_A), Pt_WA) # world frame to camera frame B
 
             # Calculate [xB,yB,zB] point in [uB,vB] image space
             uv_B[1] = ((self.intrinsic_mat[0,0]*Pt_BW[0,0])/Pt_BW[2,0])+self.intrinsic_mat[0,2]
@@ -111,47 +111,62 @@ class Generate_Correspondence():
 
 # Parameters init
 depth_margin = 0.03 # in meter
-depth_scale = 1000
-nb_match = 10
-nb_non_match = 0
+depth_scale = 1
+nb_match = 50
+nb_non_match = 10
 
 # Camera intrinsic parameters
 fx = 5.40021232e+02
 fy = 5.40021232e+02
 cx = 3.20000000e+02
 cy = 2.40000000e+02
+
+fx_ = 585
+fy_ = 585
+cx_ = 320
+cy_ = 240
+
 # CIP matrix
 CIP = np.array([(fx,0,cx),(0,fy,cy),(0,0,1)], dtype="float32")
+CIP_ = np.array([(fx_,0,cx_),(0,fy_,cy_),(0,0,1)], dtype="float32")
 
 # get reference and current image ((H,W,3) pixels)
 image_ref = cv2.imread("Test_correspondence/RGB_A.png",cv2.IMREAD_COLOR)
 image_cur = cv2.imread("Test_correspondence/RGB_B.png",cv2.IMREAD_COLOR)
 
+image_ref_ = cv2.imread("Test_correspondence/RGB_A_.png",cv2.IMREAD_COLOR)
+image_cur_ = cv2.imread("Test_correspondence/RGB_B_.png",cv2.IMREAD_COLOR)
+
 # get reference and current Depth (HxW pixels)
 depth_ref = cv2.imread("Test_correspondence/Depth_A.png",cv2.COLOR_BGR2GRAY)
 depth_cur = cv2.imread("Test_correspondence/Depth_B.png",cv2.COLOR_BGR2GRAY)
 
+depth_ref_ = cv2.imread("Test_correspondence/Depth_A_.png",cv2.COLOR_BGR2GRAY)
+depth_cur_ = cv2.imread("Test_correspondence/Depth_B_.png",cv2.COLOR_BGR2GRAY)
+
 # init camera world pose (homogeneous transformation matrix)
-Pose_B = np.array([(9.99995766e-01,-1.88792221e-03,-2.21453870e-03,2.50915000e-05),(1.89050428e-03,9.99997535e-01,1.16444747e-03,9.32049000e-04),(2.21233485e-03,-1.16862913e-03,9.99996870e-01,5.66633000e-04),(0.00000000e+00,0.00000000e+00,0.00000000e+00,1.00000000e+00)], dtype="float32")
-Pose_A = np.array([(9.93902221e-01,-5.48237322e-02,9.56699229e-02,-9.47249000e-02),(5.16109152e-02,9.98027483e-01,3.57415172e-02,-7.40755000e-02),(-9.74406958e-02,-3.05859610e-02,9.94771235e-01,6.08678000e-02),(0.00000000e+00,0.00000000e+00,0.00000000e+00,1.00000000e+00)], dtype="float32")
+Pose_A = np.array([(9.99995766e-01,-1.88792221e-03,-2.21453870e-03,2.50915000e-05),(1.89050428e-03,9.99997535e-01,1.16444747e-03,9.32049000e-04),(2.21233485e-03,-1.16862913e-03,9.99996870e-01,5.66633000e-04),(0.00000000e+00,0.00000000e+00,0.00000000e+00,1.00000000e+00)], dtype="float32")
+Pose_B = np.array([(9.93902221e-01,-5.48237322e-02,9.56699229e-02,-9.47249000e-02),(5.16109152e-02,9.98027483e-01,3.57415172e-02,-7.40755000e-02),(-9.74406958e-02,-3.05859610e-02,9.94771235e-01,6.08678000e-02),(0.00000000e+00,0.00000000e+00,0.00000000e+00,1.00000000e+00)], dtype="float32")
+
+Pose_A_ = np.array([(9.1372198e-001,-1.3668367e-001,3.8181826e-001,3.2027110e-001),(8.6929448e-002,9.8538327e-001,1.4469212e-001,8.2742892e-002),(-3.9611572e-001,-9.9005558e-002,9.1249490e-001,-5.3101219e-002),(0.00000000e+00,0.00000000e+00,0.00000000e+00,1.00000000e+00)], dtype="float32")
+Pose_B_ = np.array([(8.9641327e-001,-1.5077707e-001,4.1600987e-001,3.1210643e-001),(9.8357409e-002,9.8429465e-001,1.4478061e-001,5.7636127e-002),(-4.3141663e-001,-8.8850513e-002,8.9740801e-001,-6.8682684e-003),(0.00000000e+00,0.00000000e+00,0.00000000e+00,1.00000000e+00)], dtype="float32")
 
 # init correspondence finder
-correspondence_generator = Generate_Correspondence(CIP, depth_scale, depth_margin, nb_match, nb_non_match)
+correspondence_generator = Generate_Correspondence(CIP_, depth_scale, depth_margin, nb_match, nb_non_match)
 
 # generate correspondence
-
-match_A, match_B = correspondence_generator.RGBD_matching(image_ref, depth_ref, Pose_A, image_cur, depth_cur, Pose_B, mask=None)
+match_A, match_B = correspondence_generator.RGBD_matching(image_ref_, depth_ref_, Pose_A_, image_cur_, depth_cur_, Pose_B_, mask=None)
 print("match in A = ", match_A)
 print("match in B = ", match_B)
 # print image match
 for i in range(0, len(match_A)):
-    image_ref = cv2.circle(image_ref, (match_A[i][0], match_A[i][1]), 8, (255, 0, 0), 2)
-    image_cur = cv2.circle(image_cur, (match_B[i][0], match_B[i][1]), 8, (255, 0, 0), 2)
+    image_ref_ = cv2.circle(image_ref_, (match_A[i][0], match_A[i][1]), 8, (255, 0, 0), 2)
+    image_cur_ = cv2.circle(image_cur_, (match_B[i][0], match_B[i][1]), 8, (255, 0, 0), 2)
 
-plt.imshow(image_ref)
+plt.imshow(image_ref_)
 plt.title("point used")
 plt.show()
-plt.imshow(image_cur)
+plt.imshow(image_cur_)
 plt.title("point used")
 plt.show()
 
