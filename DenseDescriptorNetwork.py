@@ -121,6 +121,8 @@ DDN = VisualDescriptorNet(descriptorDim=16)
 optimizer = optim.Adam(DDN.parameters(), lr=1.0e-4, weight_decay=1.0e-4)
 lrSteps = 250
 lrDecay = 0.9
+# Init LoFTR network
+matcher = KF.LoFTR(pretrained='indoor')
 
 # load dataset
 
