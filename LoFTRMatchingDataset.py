@@ -22,7 +22,7 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
     # match in A that need to be generated
     # OUPUT :
     # - matchA / matchB / nonMatchA / nonMatchB tensor with shape [B, nb_match]
-    # match/non-match = image_width * v + u
+    # match/non-match = image_width * row + column
     # ---------------------------------------------------------------------------------
     # Get batch size
     batchSize = ImgA.size()[0]
@@ -53,8 +53,8 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
         # matchA / matchB are extract from keypoints at a specific batch
         for i in range(batchIndexKeyoints.size()[0]):
             if batchIndexKeyoints[i] == batch:
-                currentBatchA.append(W * kp_A[i,1] + kp_A[i,0])
-                currentBatchB.append(W * kp_B[i,1] + kp_B[i,0])
+                currentBatchA.append(W * kp_A[i,0] + kp_A[i,1])
+                currentBatchB.append(W * kp_B[i,0] + kp_B[i,1])
         # update global match list
         matchA.append(currentBatchA)
         matchB.append(currentBatchB)
@@ -63,10 +63,10 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
         for i in range(len(currentBatchA)):
             sample = 0
             while (sample != NumberNonMatchPerMatch):
-                rdIdx = random.randint(0, len(currentBatchB)-1)
-                if rdIdx != i:
-                    currentBatchNA.append(matchA[i])
-                    currentBatchNB.append(matchB[rdIdx])
+                rdUVW = random.randint(0, (W*H))
+                if rdUVW != currentBatchB[i]:
+                    currentBatchNA.append(currentBatchA[i])
+                    currentBatchNB.append(rdUVW)
                     sample += 1
                 else:
                     continue
@@ -74,4 +74,4 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
         nonMatchA.append(currentBatchNA)
         nonMatchB.append(currentBatchNB)
 
-    return matchA, matchB, nonMatchA, nonMatchB
+    return matchA, matchB, nonMatchA
