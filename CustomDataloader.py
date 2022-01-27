@@ -43,9 +43,31 @@ class ImagePairDataset(data.Dataset):
         pair = {'image A': imgA, 'image B': imgB, 'image A Match': imgAMatch, 'image B Match': imgBMatch}
         return pair
 
+def imshow(inp, title=None):
+    """Imshow for Tensor."""
+    inp = inp.numpy().transpose((1, 2, 0))
+    mean = np.array([0.485, 0.456, 0.406])
+    std = np.array([0.229, 0.224, 0.225])
+    inp = std * inp + mean
+    inp = np.clip(inp, 0, 1)
+    plt.imshow(inp)
+    if title is not None:
+        plt.title(title)
+    plt.pause(0.001)  # pause a bit so that plots are updated
+
+
 # Load dataset
 imgPairDataset = ImagePairDataset(ImgADir="/home/main/Bureau/dataset/ImgA", ImgBDir="/home/main/Bureau/dataset/ImgB", Augmentation=None)
-
+loader = data.DataLoader(imgPairDataset, batch_size = 3, shuffle = False)
+inputs = next(iter(loader))
+# Make a grid from batch
+out1 = torchvision.utils.make_grid(inputs['image A'])
+out2 = torchvision.utils.make_grid(inputs['image B'])
+imshow(out1, title="batch")
+plt.show()
+imshow(out2, title="batch")
+plt.show()
+"""
 # show some data
 for idx in range(len(imgPairDataset)):
     sample = imgPairDataset[idx]
@@ -57,3 +79,4 @@ for idx in range(len(imgPairDataset)):
     fig.add_subplot(1, 2, 2)
     plt.imshow(sample['image B Match'].permute(1,2,0).detach().numpy())
     plt.show()
+"""
