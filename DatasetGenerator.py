@@ -1,18 +1,28 @@
 # Dense Descriptor dataset subsampling
 # Author : Munch Quentin, 2022.
-
+import os
+import os.path
 import math
 from random import randint
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 
-FileToStoreImgA = "/home/neurotronics/Bureau/DDN/dataset/ImgA"
-FileToStoreImgB = "/home/neurotronics/Bureau/DDN/dataset/ImgB"
-VideoFile = "/home/neurotronics/Bureau/DDN/dataset/seq1.mp4"
-sampling = 15
-idx = 0
+FileToStoreImgA = "/home/main/Bureau/dataset/ImgA"
+FileToStoreImgB = "/home/main/Bureau/dataset/ImgB"
+VideoFile = "/home/main/Bureau/seq1.mp4"
+sampling = 10
 step = 0
+# Check if there are some files in the folder
+listFilesA = os.listdir(FileToStoreImgA)
+listFilesB = os.listdir(FileToStoreImgB)
+if len(listFilesA) > 0:
+    idx = len(listFilesA)
+    for i in range(0, len(listFilesA)):
+        print(listFilesA[i])
+        print(listFilesB[i])
+else:
+    idx = 0
 # load video file
 cap = cv2.VideoCapture(VideoFile)
 counter = 0
