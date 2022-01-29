@@ -18,11 +18,12 @@ from collections import OrderedDict
 
 # Custom dataloader
 class ImagePairDataset(data.Dataset):
-    def __init__(self, ImgADir, ImgBDir, Augmentation=None):
+    def __init__(self, ImgADir, ImgBDir, Augmentation):
         self.imgADir = ImgADir
         self.imgBDir = ImgBDir
         self.augmentation = Augmentation
         self.normalization = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        self.colorJitter = transforms.ColorJitter(brightness=.5, hue=.3)
     # Overloaded len method
     def __len__(self):
         return len(os.listdir(self.imgADir))
@@ -32,14 +33,31 @@ class ImagePairDataset(data.Dataset):
         imgAPath = os.path.join(self.imgADir, os.listdir(self.imgADir)[idx])
         imgBPath = os.path.join(self.imgBDir, os.listdir(self.imgBDir)[idx])
         # convert to color tensor with shape [B,C,H,W]
-        imgAMatch = read_image(imgAPath)/255
-        imgBMatch = read_image(imgBPath)/255
-        # Normalize image for training
-        imgA = self.normalization(imgAMatch)
-        imgB = self.normalization(imgBMatch)
-        # Transform image B if needed
-        if self.augmentation != None:
-            imgB = self.augmentation(imgB)
+        imgAMatch = read_image(imgAPath)
+        imgBMatch = read_image(imgBPath)
+        imgA = imgAMatch.clone()
+        imgB = imgBMatch.clone()
+        # Data augmentation for the image B (match and training)
+        if self.augmentation == True:
+            # Random H flip
+            if random.random() > 0.5:
+                imgBMatch = transforms.functional.hflip(imgBMatch)
+                imgB = transforms.functional.hflip(imgB)
+            # Random V flip
+            if random.random() > 0.5:
+                imgBMatch = transforms.functional.vflip(imgBMatch)
+                imgB = transforms.functional.vflip(imgB)
+            # Random ColorJitter
+            if random.random() > 0.5:
+                imgB = self.colorJitter(imgB)
+        # Normalize image for training and matching
+        imgAMatch = imgAMatch/255.
+        imgBMatch = imgBMatch/255.
+        imgA = imgA/255.
+        imgB = imgB/255.
+        imgA = self.normalization(imgA)
+        imgB = self.normalization(imgB)
+        # create a dictionnary for access
         pair = {'image A': imgA, 'image B': imgB, 'image A Match': imgAMatch, 'image B Match': imgBMatch}
         return pair
 
@@ -55,10 +73,11 @@ def imshow(inp, title=None):
         plt.title(title)
     plt.pause(0.001)  # pause a bit so that plots are updated
 
-
 # Load dataset
-imgPairDataset = ImagePairDataset(ImgADir="/home/main/Bureau/dataset/ImgA", ImgBDir="/home/main/Bureau/dataset/ImgB", Augmentation=None)
-loader = data.DataLoader(imgPairDataset, batch_size = 3, shuffle = False)
+
+imgPairDataset = ImagePairDataset(ImgADir="/home/neurotronics/Bureau/DDN/dataset/ImgA", ImgBDir="/home/neurotronics/Bureau/DDN/dataset/ImgB", Augmentation=True)
+"""
+loader = data.DataLoader(imgPairDataset, batch_size = 10, shuffle = False)
 inputs = next(iter(loader))
 # Make a grid from batch
 out1 = torchvision.utils.make_grid(inputs['image A'])
@@ -68,6 +87,7 @@ plt.show()
 imshow(out2, title="batch")
 plt.show()
 """
+
 # show some data
 for idx in range(len(imgPairDataset)):
     sample = imgPairDataset[idx]
@@ -79,4 +99,3 @@ for idx in range(len(imgPairDataset)):
     fig.add_subplot(1, 2, 2)
     plt.imshow(sample['image B Match'].permute(1,2,0).detach().numpy())
     plt.show()
-"""
