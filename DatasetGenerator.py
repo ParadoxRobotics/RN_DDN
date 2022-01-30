@@ -8,10 +8,10 @@ import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 
-FileToStoreImgA = "/home/main/Bureau/dataset/ImgA"
-FileToStoreImgB = "/home/main/Bureau/dataset/ImgB"
-VideoFile = "/home/main/Bureau/seq1.mp4"
-sampling = 10
+FileToStoreImgA = "/home/neurotronics/Bureau/DDN/dataset/ImgA"
+FileToStoreImgB = "/home/neurotronics/Bureau/DDN/dataset/ImgB"
+VideoFile = "/home/neurotronics/Bureau/DDN/dataset/seq8.mp4"
+sampling = 25
 step = 0
 # Check if there are some files in the folder
 listFilesA = os.listdir(FileToStoreImgA)
