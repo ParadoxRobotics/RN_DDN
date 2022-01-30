@@ -25,7 +25,7 @@ FileToStoreImgB = "/home/neurotronics/Bureau/DDN/dataset/ImgB"
 listFilesA = os.listdir(FileToStoreImgA)
 listFilesB = os.listdir(FileToStoreImgB)
 
-matcher = KF.LoFTR(pretrained='indoor')
+matcher = KF.LoFTR(pretrained='indoor').cuda()
 
 for idx in range(0, len(listFilesA)):
     # Load A
@@ -38,8 +38,8 @@ for idx in range(0, len(listFilesA)):
     tensorimgB = K.image_to_tensor(imgB, False).float() /255.
     tensorimgB = K.color.bgr_to_rgb(tensorimgB)
 
-    input_dict = {"image0": K.color.rgb_to_grayscale(tensorimgA),
-                  "image1": K.color.rgb_to_grayscale(tensorimgB)}
+    input_dict = {"image0": K.color.rgb_to_grayscale(tensorimgA).cuda(),
+                  "image1": K.color.rgb_to_grayscale(tensorimgB).cuda()}
 
     with torch.no_grad():
         correspondences = matcher(input_dict)
