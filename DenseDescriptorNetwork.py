@@ -230,15 +230,20 @@ class ContrastiveLoss(torch.nn.Module):
         # return global loss, matching loss and non-match loss
         return contrastiveLossSum, matchLossSum, nonMatchLossSum
 
-# Set the device when the the network and the matcher run
+# Set the training/inference device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+if torch.cuda.is_available():
+    # flush GPU memory
+    torch.cuda.empty_cache()
 # Init DDN Network, Adam optimizer, scheduler and loss function
 descriptorSize = 16
 batchSize = 10
 nbEpoch = 50
 DDN = VisualDescriptorNet(descriptorDim=descriptorSize).to(device)
 optimizer = optim.Adam(DDN.parameters(), lr=1.0e-4, weight_decay=1.0e-4)
-scheduler = lr_scheduler.StepLR(optimizer, step_size=nbEpoch/2, gamma=0.9)
+lrPower = 2
+lambda1 = lambda epoch: (1.0 - epoch / nbEpoch) ** lrPower
+scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=[lambda1])
 contrastiveLoss = ContrastiveLoss(margin=0.5, nonMatchLossWeight=1.0)
 # Init LoFTR network
 matcher = KF.LoFTR(pretrained='indoor').to(device)
@@ -261,6 +266,7 @@ for epoch in range(0,nbEpoch):
     # Training on the dataset
     for data in trainingLoader:
         # Compute match/non-match
+        print("Find Correspondences")
         inputBatchACorr = data['image A Match'].to(device)
         inputBatchBCorr = data['image B Match'].to(device)
         inputBatchA = data['image A'].to(device)
@@ -270,7 +276,9 @@ for epoch in range(0,nbEpoch):
                                                                        ImgB=inputBatchBCorr,
                                                                        NumberNonMatchPerMatch=150,
                                                                        device=device)
+        print(len(matchA[0]), "Match found and", len(matchB[0]), "Non-Match Found")
         # Perform inference using the DDN
+        print("Network Inference")
         desA = DDN(inputBatchA)
         desB = DDN(inputBatchB)
         # Reshape descriptor to [Batch, H*W, Channel]
@@ -284,6 +292,7 @@ for epoch in range(0,nbEpoch):
         vectorNonMatchA = torch.FloatTensor(nonMatchA)
         vectorNonMatchB = torch.FloatTensor(nonMatchB)
         # Compute loss (update cumulated loss)
+        print("Optimize...")
         loss, MLoss, MNLoss = contrastiveLoss(outA=vectorDesA,
                                               outB=vectorDesB,
                                               matchA=vectorMatchA,
@@ -294,5 +303,7 @@ for epoch in range(0,nbEpoch):
         loss.backward()
         # Update weight and scheduler step
         optimizer.step()
+        # Plot some shit
+        print("Epoch N°", epoch, "current Loss = ", loss.item()))
     # Update scheduler
     scheduler.step()
