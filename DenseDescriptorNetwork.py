@@ -8,8 +8,9 @@
 # Author : Munch Quentin, 2022.
 
 # General and computer vision lib
+import os
 import math
-from random import randint
+import random
 import copy
 import numpy as np
 import cv2
@@ -23,6 +24,7 @@ import torch.optim as optim
 from torch.optim import lr_scheduler
 import torch.utils.data as data
 from torchvision import models, datasets, transforms, utils
+from torchvision.io import read_image
 # Kornia computer vision differential lib
 import kornia as K
 import kornia.feature as KF
@@ -71,14 +73,13 @@ class ImagePairDataset(data.Dataset):
         return pair
 
 # Find correspondences between 2 images and generate non-matches from it
-def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch=150, device):
+def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch=150):
     # ----------------------------------------------------------------------------------
     # INPUT :
     # - The matcher must be LoFTR type neural network
     # - ImgA and ImgB must be a RGB/255 tensor with shape [B,C,H,W]
     # - NumberNonMatchPerMatch is the number of non-match in imageB for each good
     # match in A that need to be generated
-    # - Device use for the inference
     # OUPUT :
     # - matchA / matchB / nonMatchA / nonMatchB tensor with shape [B, nb_match]
     # match/non-match = image_width * row + column
@@ -88,8 +89,8 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch=150, dev
     H = ImgA.size()[2]
     W = ImgA.size()[3]
     # Create a dict for the 2 images in grayscale
-    inputDict = {"image0": K.color.rgb_to_grayscale(imgA).to(device),
-                 "image1": K.color.rgb_to_grayscale(imgB).to(device)}
+    inputDict = {"image0": K.color.rgb_to_grayscale(ImgA),
+                 "image1": K.color.rgb_to_grayscale(ImgB)}
     # Find correspondences using the LoFTR network
     with torch.no_grad():
         correspondences = matcher(inputDict)
@@ -97,7 +98,7 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch=150, dev
     kp_A = correspondences['keypoints0'].cpu().numpy()
     kp_B = correspondences['keypoints1'].cpu().numpy()
     batchIndexKeyoints = correspondences['batch_indexes'].cpu().numpy()
-    print(kp_A.shape()[0],"Correspondences found using LoFTR in this batch")
+    print(kp_A.shape[0],"Correspondences found using LoFTR in this batch")
     # create empty list
     matchA = []
     matchB = []
@@ -110,10 +111,10 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch=150, dev
         currentBatchNA = []
         currentBatchNB = []
         # matchA / matchB are extract from keypoints at a specific batch
-        for i in range(batchIndexKeyoints.shape()[0]):
+        for i in range(batchIndexKeyoints.shape[0]):
             if batchIndexKeyoints[i] == batch:
-                currentBatchA.append(W * int(kp_A[i,0]) + int(kp_A[i,1]))
-                currentBatchB.append(W * int(kp_B[i,0]) + int(kp_B[i,1]))
+                currentBatchA.append(W * int(kp_A[i,1]) + int(kp_A[i,0]))
+                currentBatchB.append(W * int(kp_B[i,1]) + int(kp_B[i,0]))
             else:
                 break
         # update global match list
@@ -237,9 +238,10 @@ if torch.cuda.is_available():
     torch.cuda.empty_cache()
 # Init DDN Network, Adam optimizer, scheduler and loss function
 descriptorSize = 16
-batchSize = 10
+batchSize = 3
 nbEpoch = 50
 DDN = VisualDescriptorNet(descriptorDim=descriptorSize).to(device)
+print("DDN Network initialized with D =", descriptorSize, )
 optimizer = optim.Adam(DDN.parameters(), lr=1.0e-4, weight_decay=1.0e-4)
 lrPower = 2
 lambda1 = lambda epoch: (1.0 - epoch / nbEpoch) ** lrPower
@@ -247,17 +249,14 @@ scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=[lambda1])
 contrastiveLoss = ContrastiveLoss(margin=0.5, nonMatchLossWeight=1.0)
 # Init LoFTR network
 matcher = KF.LoFTR(pretrained='indoor').to(device)
+print("Matcher initialized")
 # Load Training Dataset
-imgAFolderTraining = "/home/neurotronics/Bureau/DDN/dataset/training/ImgA"
-imgBFolderTraining = "/home/neurotronics/Bureau/DDN/dataset/training/ImgB"
-trainingDataset = ImagePairDataset(ImgADir=imgAFolderTraining, ImgBDir=imgBFolderTraining, Augmentation=True)
-# Load Testing Dataset
-imgAFolderTesting = "/home/neurotronics/Bureau/DDN/dataset/testing/ImgA"
-imgBFolderTesting = "/home/neurotronics/Bureau/DDN/dataset/testing/ImgB"
-testingDataset = ImagePairDataset(ImgADir=imgAFolderTesting, ImgBDir=imgBFolderTesting, Augmentation=False)
+imgAFolderTraining = "/home/neurotronics/Bureau/DDN/dataset/ImgA"
+imgBFolderTraining = "/home/neurotronics/Bureau/DDN/dataset/ImgB"
+trainingDataset = ImagePairDataset(ImgADir=imgAFolderTraining, ImgBDir=imgBFolderTraining, Augmentation=False)
 # Init dataloader for training and testing
 trainingLoader = data.DataLoader(trainingDataset, batch_size=batchSize, shuffle=False, num_workers=4)
-testingLoader = data.DataLoader(testingDataset, batch_size=1, shuffle=False, num_workers=4)
+print("Dataset loaded !")
 
 # training / testing
 for epoch in range(0,nbEpoch):
@@ -274,8 +273,7 @@ for epoch in range(0,nbEpoch):
         matchA, matchB, nonMatchA, nonMatchB = CorrespondenceGenerator(Matcher=matcher,
                                                                        ImgA=inputBatchACorr,
                                                                        ImgB=inputBatchBCorr,
-                                                                       NumberNonMatchPerMatch=150,
-                                                                       device=device)
+                                                                       NumberNonMatchPerMatch=150)
         print(len(matchA[0]), "Match found and", len(matchB[0]), "Non-Match Found")
         # Perform inference using the DDN
         print("Network Inference")
