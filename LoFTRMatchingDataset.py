@@ -104,8 +104,8 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch, device)
         # matchA / matchB are extract from keypoints at a specific batch
         for i in range(batchIndexKeyoints.shape[0]):
             if batchIndexKeyoints[i] == batch:
-                currentBatchA.append(W * int(kp_A[i,0]) + int(kp_A[i,1]))
-                currentBatchB.append(W * int(kp_B[i,0]) + int(kp_B[i,1]))
+                currentBatchA.append(W * int(kp_A[i,1]) + int(kp_A[i,0]))
+                currentBatchB.append(W * int(kp_B[i,1]) + int(kp_B[i,0]))
             else:
                 break
         # update global match list
