@@ -76,4 +76,4 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
         nonMatchA.append(currentBatchNA)
         nonMatchB.append(currentBatchNB)
 
-    return matchA, matchB, nonMatchA
+    return matchA, matchB, nonMatchA, nonMatchB
