@@ -237,7 +237,7 @@ if torch.cuda.is_available():
 # Init DDN Network, Adam optimizer, scheduler and loss function
 descriptorSize = 16
 batchSize = 1
-nbEpoch = 50
+nbEpoch = 2
 DDN = VisualDescriptorNet(descriptorDim=descriptorSize).to(device)
 print("DDN Network initialized with D =", descriptorSize, )
 optimizer = optim.Adam(DDN.parameters(), lr=1.0e-4, weight_decay=1.0e-4)
@@ -273,11 +273,13 @@ for epoch in range(0,nbEpoch):
                                                                        ImgB=inputBatchBCorr,
                                                                        NumberNonMatchPerMatch=150)
         for b in range(batchSize):
-            print(len(matchA[b]), "Match found and", len(nonMatchA[b]), "Non-Match Found in image =",b)
+            print(len(matchA[b]), "Match found and", len(nonMatchA[b]), "Non-Match Found in imageA =",b)
+            print(len(matchB[b]), "Match found and", len(nonMatchB[b]), "Non-Match Found in imageB =",b)
         # Perform inference using the DDN
         print("Network Inference")
         desA = DDN(inputBatchA)
         desB = DDN(inputBatchB)
+        print("Output with shape = ",desA.size())
         # Reshape descriptor to [Batch, H*W, Channel]
         print("Reshape output descriptors")
         vectorDesA = desA.view(desA.size()[0], desA.size()[1], desA.size()[2] * desA.size()[3])
@@ -299,7 +301,7 @@ for epoch in range(0,nbEpoch):
         # Update weight
         optimizer.step()
         # Plot some shit
-        print("Epoch N°", epoch, "current Loss = ", loss.item()))
+        print("Epoch N°", epoch, "current Loss = ", loss.item())
     # Update scheduler
     print("Update scheduler")
     scheduler.step()
