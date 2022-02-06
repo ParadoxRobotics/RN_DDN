@@ -84,7 +84,7 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch, device)
                  "image1": K.color.rgb_to_grayscale(ImgB).to(device)}
     # Find correspondences using the LoFTR network
     with torch.no_grad():
-        correspondences = matcher(inputDict)
+        correspondences = Matcher(inputDict)
     # get keypoints and batch indexes
     kp_A = correspondences['keypoints0'].cpu().numpy()
     kp_B = correspondences['keypoints1'].cpu().numpy()
@@ -107,7 +107,7 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch, device)
                 currentBatchA.append(W * int(kp_A[i,1]) + int(kp_A[i,0]))
                 currentBatchB.append(W * int(kp_B[i,1]) + int(kp_B[i,0]))
             else:
-                break
+                continue
         # update global match list
         matchA.append(currentBatchA)
         matchB.append(currentBatchB)
@@ -116,13 +116,11 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch, device)
         for i in range(len(currentBatchA)):
             sample = 0
             while (sample != NumberNonMatchPerMatch):
-                rdUVW = random.randint(0, (W*H))
+                rdUVW = random.randint(0, (W*H)-1)
                 if rdUVW != currentBatchB[i]:
                     currentBatchNA.append(currentBatchA[i])
                     currentBatchNB.append(rdUVW)
                     sample += 1
-                else:
-                    continue
         # update global non-match list
         nonMatchA.append(currentBatchNA)
         nonMatchB.append(currentBatchNB)
@@ -142,7 +140,7 @@ imgAFolderTraining = "/home/neurotronics/Bureau/DDN/dataset/ImgA"
 imgBFolderTraining = "/home/neurotronics/Bureau/DDN/dataset/ImgB"
 trainingDataset = ImagePairDataset(ImgADir=imgAFolderTraining, ImgBDir=imgBFolderTraining, Augmentation=False)
 # Init dataloader for training and testing
-batchSize = 5
+batchSize = 3
 trainingLoader = data.DataLoader(trainingDataset, batch_size=batchSize, shuffle=False, num_workers=4)
 print("Dataset loaded !")
 
@@ -173,6 +171,7 @@ for data in trainingLoader:
     imshow(out2c, title="batch BC", tel=False)
     plt.show()
     inputBatchACorr = data['image A Match']
+    print(inputBatchACorr.size())
     inputBatchBCorr = data['image B Match']
     inputBatchA = data['image A']
     inputBatchB = data['image B']
@@ -181,7 +180,3 @@ for data in trainingLoader:
                                                                    ImgB=inputBatchBCorr,
                                                                    NumberNonMatchPerMatch=150,
                                                                    device=device)
-    print("MatchA",len(matchA[0]))
-    print("MatchB",len(matchB[0]))
-    print("NonMatchA",len(nonMatchA[0]))
-    print("NonMatchB",len(nonMatchB[0]))

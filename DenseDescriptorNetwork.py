@@ -93,7 +93,7 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch=150):
                  "image1": K.color.rgb_to_grayscale(ImgB)}
     # Find correspondences using the LoFTR network
     with torch.no_grad():
-        correspondences = matcher(inputDict)
+        correspondences = Matcher(inputDict)
     # get keypoints and batch indexes
     kp_A = correspondences['keypoints0'].cpu().numpy()
     kp_B = correspondences['keypoints1'].cpu().numpy()
@@ -116,7 +116,7 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch=150):
                 currentBatchA.append(W * int(kp_A[i,1]) + int(kp_A[i,0]))
                 currentBatchB.append(W * int(kp_B[i,1]) + int(kp_B[i,0]))
             else:
-                break
+                continue
         # update global match list
         matchA.append(currentBatchA)
         matchB.append(currentBatchB)
@@ -125,13 +125,11 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch=150):
         for i in range(len(currentBatchA)):
             sample = 0
             while (sample != NumberNonMatchPerMatch):
-                rdUVW = random.randint(0, (W*H))
+                rdUVW = random.randint(0, (W*H)-1)
                 if rdUVW != currentBatchB[i]:
                     currentBatchNA.append(currentBatchA[i])
                     currentBatchNB.append(rdUVW)
                     sample += 1
-                else:
-                    continue
         # update global non-match list
         nonMatchA.append(currentBatchNA)
         nonMatchB.append(currentBatchNB)
@@ -190,7 +188,7 @@ class ContrastiveLoss(torch.nn.Module):
         super(ContrastiveLoss, self).__init__()
         self.margin = margin
         self.nonMatchLossWeight = nonMatchLossWeight
-    def forward(self, outA, outB, matchA, matchB, nonMatchA, nonMatchB):
+    def forward(self, outA, outB, matchA, matchB, nonMatchA, nonMatchB, device):
         # ----------------------------------------------------------------------------------
         # INPUT :
         # - Network output tensor outA and outB with the shape [B,H*W,C]
@@ -208,11 +206,11 @@ class ContrastiveLoss(torch.nn.Module):
             nbMatch = len(matchA[b])
             nbNonMatch = len(nonMatchA[b])
             # create a tensor with the listed matched descriptors in the estimated descriptors map (net output)
-            matchADes = torch.index_select(outA[b].unsqueeze(0), 1, matchA[b]).unsqueeze(0)
-            matchBDes = torch.index_select(outB[b].unsqueeze(0), 1, matchB[b]).unsqueeze(0)
+            matchADes = torch.index_select(outA[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(matchA[b])).to(device)).unsqueeze(0)
+            matchBDes = torch.index_select(outB[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(matchB[b])).to(device)).unsqueeze(0)
             # create a tensor with the listed non-matched descriptors in the estimated descriptors map (net output)
-            nonMatchADes = torch.index_select(outA[b].unsqueeze(0), 1, nonMatchA[b]).unsqueeze(0)
-            nonMatchBDes = torch.index_select(outB[b].unsqueeze(0), 1, nonMatchB[b]).unsqueeze(0)
+            nonMatchADes = torch.index_select(outA[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(nonMatchA[b])).to(device)).unsqueeze(0)
+            nonMatchBDes = torch.index_select(outB[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(nonMatchB[b])).to(device)).unsqueeze(0)
             # calculate match loss (L2 distance)
             matchLoss = 1.0/nbMatch * (matchADes - matchBDes).pow(2).sum()
             # calculate non-match loss (L2 distance with margin)
@@ -238,7 +236,7 @@ if torch.cuda.is_available():
     torch.cuda.empty_cache()
 # Init DDN Network, Adam optimizer, scheduler and loss function
 descriptorSize = 16
-batchSize = 3
+batchSize = 1
 nbEpoch = 50
 DDN = VisualDescriptorNet(descriptorDim=descriptorSize).to(device)
 print("DDN Network initialized with D =", descriptorSize, )
@@ -274,34 +272,34 @@ for epoch in range(0,nbEpoch):
                                                                        ImgA=inputBatchACorr,
                                                                        ImgB=inputBatchBCorr,
                                                                        NumberNonMatchPerMatch=150)
-        print(len(matchA[0]), "Match found and", len(matchB[0]), "Non-Match Found")
+        for b in range(batchSize):
+            print(len(matchA[b]), "Match found and", len(nonMatchA[b]), "Non-Match Found in image =",b)
         # Perform inference using the DDN
         print("Network Inference")
         desA = DDN(inputBatchA)
         desB = DDN(inputBatchB)
         # Reshape descriptor to [Batch, H*W, Channel]
+        print("Reshape output descriptors")
         vectorDesA = desA.view(desA.size()[0], desA.size()[1], desA.size()[2] * desA.size()[3])
         vectorDesA = vectorDesA.permute(0, 2, 1)
         vectorDesB = desB.view(desB.size()[0], desB.size()[1], desB.size()[2] * desB.size()[3])
         vectorDesB = vectorDesB.permute(0, 2, 1)
-        # Convert list to tensor with shape [Batch, nbKeypoints]
-        vectorMatchA = torch.FloatTensor(matchA)
-        vectorMatchB = torch.FloatTensor(matchB)
-        vectorNonMatchA = torch.FloatTensor(nonMatchA)
-        vectorNonMatchB = torch.FloatTensor(nonMatchB)
         # Compute loss (update cumulated loss)
-        print("Optimize...")
+        print("Computing loss")
         loss, MLoss, MNLoss = contrastiveLoss(outA=vectorDesA,
                                               outB=vectorDesB,
-                                              matchA=vectorMatchA,
-                                              matchB=vectorMatchB,
-                                              nonMatchA=vectorNonMatchA,
-                                              nonMatchB=vectorNonMatchB)
+                                              matchA=matchA,
+                                              matchB=matchB,
+                                              nonMatchA=nonMatchA,
+                                              nonMatchB=nonMatchB,
+                                              device=device)
+        print("Backpropagate and optimize")
         # Backpropagate loss
         loss.backward()
-        # Update weight and scheduler step
+        # Update weight
         optimizer.step()
         # Plot some shit
         print("Epoch N°", epoch, "current Loss = ", loss.item()))
     # Update scheduler
+    print("Update scheduler")
     scheduler.step()
