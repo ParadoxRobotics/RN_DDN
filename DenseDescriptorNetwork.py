@@ -225,7 +225,7 @@ class ContrastiveLoss(torch.nn.Module):
             nonMatchADes = torch.index_select(outA[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(nonMatchA[b])).to(device)).unsqueeze(0)
             nonMatchBDes = torch.index_select(outB[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(nonMatchB[b])).to(device)).unsqueeze(0)
             # calculate match loss (L2 distance)
-            matchLoss = 1.0/nbMatch * (matchADes - matchBDes).pow(2).sum()
+            matchLoss = (1.0/nbMatch) * (matchADes - matchBDes).pow(2).sum()
             # calculate non-match loss (L2 distance with margin)
             zerosVec = torch.zeros_like(nonMatchADes)
             pixelwiseNonMatchLoss = torch.max(zerosVec, self.margin-((nonMatchADes - nonMatchBDes).pow(2)))
@@ -234,10 +234,10 @@ class ContrastiveLoss(torch.nn.Module):
                 hardNegativeNonMatch = len(torch.nonzero(pixelwiseNonMatchLoss))
                 print("Number Hard-Negative =", hardNegativeNonMatch)
                 # final non_match loss with hard negative scaling
-                nonMatchloss = self.nonMatchLossWeight * 1.0/hardNegativeNonMatch * pixelwiseNonMatchLoss.sum()
+                nonMatchloss = self.nonMatchLossWeight * (1.0/hardNegativeNonMatch) * pixelwiseNonMatchLoss.sum()
             else:
                 # final non_match loss
-                nonMatchloss = self.nonMatchLossWeight * 1.0/nbNonMatch * pixelwiseNonMatchLoss.sum()
+                nonMatchloss = self.nonMatchLossWeight * (1.0/nbNonMatch) * pixelwiseNonMatchLoss.sum()
             # compute contrastive loss
             contrastiveLoss = matchLoss + nonMatchloss
             # update final losses
