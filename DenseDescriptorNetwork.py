@@ -229,6 +229,7 @@ class ContrastiveLoss(torch.nn.Module):
             pixelwiseNonMatchLoss = torch.max(zerosVec, self.margin-((nonMatchADes - nonMatchBDes).pow(2)))
             # Hard negative scaling (pixelwise)
             hardNegativeNonMatch = len(torch.nonzero(pixelwiseNonMatchLoss))
+            print("Number Hard-Negative =", hardNegativeNonMatch)
             # final non_match loss with hard negative scaling
             nonMatchloss = self.nonMatchLossWeight * 1.0/hardNegativeNonMatch * pixelwiseNonMatchLoss.sum()
             # compute contrastive loss
