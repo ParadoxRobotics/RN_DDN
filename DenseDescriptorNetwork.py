@@ -139,7 +139,7 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch, SampleB
                     sampleB = random.sample(currentBatchB, 1)
                     if sampleB != currentBatchB[i]:
                         currentBatchNA.append(currentBatchA[i])
-                        currentBatchNB.append(sampleB)
+                        currentBatchNB.append(sampleB[0])
                         sample += 1
         # update global non-match list
         nonMatchA.append(currentBatchNA)
