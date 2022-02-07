@@ -237,7 +237,7 @@ class ContrastiveLoss(torch.nn.Module):
                 nonMatchloss = self.nonMatchLossWeight * 1.0/hardNegativeNonMatch * pixelwiseNonMatchLoss.sum()
             else:
                 # final non_match loss
-                nonMatchloss = self.nonMatchLossWeight * 1.0/nbNonMatch * pixelwiseNonMatchLoss.sum()                
+                nonMatchloss = self.nonMatchLossWeight * 1.0/nbNonMatch * pixelwiseNonMatchLoss.sum()
             # compute contrastive loss
             contrastiveLoss = matchLoss + nonMatchloss
             # update final losses
@@ -290,7 +290,7 @@ for epoch in range(0,nbEpoch):
                                                                        ImgA=inputBatchACorr,
                                                                        ImgB=inputBatchBCorr,
                                                                        NumberNonMatchPerMatch=150,
-                                                                       SampleB=False)
+                                                                       SampleB=True)
         noMatch = False
         for b in range(batchSize):
             print(len(matchA[b]), "Match found and", len(nonMatchA[b]), "Non-Match Found in imageA =",b)
@@ -318,7 +318,7 @@ for epoch in range(0,nbEpoch):
                                                   matchB=matchB,
                                                   nonMatchA=nonMatchA,
                                                   nonMatchB=nonMatchB,
-                                                  hardNegative=True,
+                                                  hardNegative=False,
                                                   device=device)
             print("Backpropagate and optimize")
             # Backpropagate loss
@@ -327,7 +327,7 @@ for epoch in range(0,nbEpoch):
             optimizer.step()
             # Plot some shit
             print("Epoch N°", epoch, "current Loss = ", loss.item())
-            print("Current loss =", loss, "Matching Loss =", MLoss, "Non-Matching Loss", MNLoss)
+            print("Current loss =", loss.item(), "Matching Loss =", MLoss.item(), "Non-Matching Loss", MNLoss.item())
         else:
             print("No Match ! Continuing training without this sample !")
             continue
