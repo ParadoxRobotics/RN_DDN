@@ -73,13 +73,15 @@ class ImagePairDataset(data.Dataset):
         return pair
 
 # Find correspondences between 2 images and generate non-matches from it
-def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch=150):
+def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch, SampleB):
     # ----------------------------------------------------------------------------------
     # INPUT :
     # - The matcher must be LoFTR type neural network
     # - ImgA and ImgB must be a RGB/255 tensor with shape [B,C,H,W]
     # - NumberNonMatchPerMatch is the number of non-match in imageB for each good
     # match in A that need to be generated
+    # - SampleB is a flag that select the non-match sampling mode : True sample from
+    # current B matches; False sample randomly from the whole picture
     # OUPUT :
     # - matchA / matchB / nonMatchA / nonMatchB tensor with shape [B, nb_match]
     # match/non-match = image_width * row + column
@@ -125,11 +127,20 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch=150):
         for i in range(len(currentBatchA)):
             sample = 0
             while (sample != NumberNonMatchPerMatch):
-                rdUVW = random.randint(0, (W*H)-1)
-                if rdUVW != currentBatchB[i]:
-                    currentBatchNA.append(currentBatchA[i])
-                    currentBatchNB.append(rdUVW)
-                    sample += 1
+                # Sample from the entire image
+                if SampleB == False:
+                    rdUVW = random.randint(0, (W*H)-1)
+                    if rdUVW != currentBatchB[i]:
+                        currentBatchNA.append(currentBatchA[i])
+                        currentBatchNB.append(rdUVW)
+                        sample += 1
+                # Sample from the current B match
+                else:
+                    sampleB = random.sample(currentBatchB, 1)
+                    if sampleB != currentBatchB[i]:
+                        currentBatchNA.append(currentBatchA[i])
+                        currentBatchNB.append(sampleB)
+                        sample += 1
         # update global non-match list
         nonMatchA.append(currentBatchNA)
         nonMatchB.append(currentBatchNB)
@@ -271,37 +282,47 @@ for epoch in range(0,nbEpoch):
         matchA, matchB, nonMatchA, nonMatchB = CorrespondenceGenerator(Matcher=matcher,
                                                                        ImgA=inputBatchACorr,
                                                                        ImgB=inputBatchBCorr,
-                                                                       NumberNonMatchPerMatch=150)
+                                                                       NumberNonMatchPerMatch=150,
+                                                                       SampleB=False)
+        noMatch = False
         for b in range(batchSize):
             print(len(matchA[b]), "Match found and", len(nonMatchA[b]), "Non-Match Found in imageA =",b)
             print(len(matchB[b]), "Match found and", len(nonMatchB[b]), "Non-Match Found in imageB =",b)
-        # Perform inference using the DDN
-        print("Network Inference")
-        desA = DDN(inputBatchA)
-        desB = DDN(inputBatchB)
-        print("Output with shape = ",desA.size())
-        # Reshape descriptor to [Batch, H*W, Channel]
-        print("Reshape output descriptors")
-        vectorDesA = desA.view(desA.size()[0], desA.size()[1], desA.size()[2] * desA.size()[3])
-        vectorDesA = vectorDesA.permute(0, 2, 1)
-        vectorDesB = desB.view(desB.size()[0], desB.size()[1], desB.size()[2] * desB.size()[3])
-        vectorDesB = vectorDesB.permute(0, 2, 1)
-        # Compute loss (update cumulated loss)
-        print("Computing loss")
-        loss, MLoss, MNLoss = contrastiveLoss(outA=vectorDesA,
-                                              outB=vectorDesB,
-                                              matchA=matchA,
-                                              matchB=matchB,
-                                              nonMatchA=nonMatchA,
-                                              nonMatchB=nonMatchB,
-                                              device=device)
-        print("Backpropagate and optimize")
-        # Backpropagate loss
-        loss.backward()
-        # Update weight
-        optimizer.step()
-        # Plot some shit
-        print("Epoch N°", epoch, "current Loss = ", loss.item())
+            if len(matchA[b]) == 0 or len(matchB[b]) == 0 or len(nonMatchA[b]) == 0 or len(nonMatchB[b]) == 0:
+                noMatch = True
+        # Number of match sufficient for training
+        if noMatch == False:
+            # Perform inference using the DDN
+            print("Network Inference")
+            desA = DDN(inputBatchA)
+            desB = DDN(inputBatchB)
+            print("Output with shape = ", desA.size())
+            # Reshape descriptor to [Batch, H*W, Channel]
+            print("Reshape output descriptors")
+            vectorDesA = desA.view(desA.size()[0], desA.size()[1], desA.size()[2] * desA.size()[3])
+            vectorDesA = vectorDesA.permute(0, 2, 1)
+            vectorDesB = desB.view(desB.size()[0], desB.size()[1], desB.size()[2] * desB.size()[3])
+            vectorDesB = vectorDesB.permute(0, 2, 1)
+            # Compute loss (update cumulated loss)
+            print("Computing loss")
+            loss, MLoss, MNLoss = contrastiveLoss(outA=vectorDesA,
+                                                  outB=vectorDesB,
+                                                  matchA=matchA,
+                                                  matchB=matchB,
+                                                  nonMatchA=nonMatchA,
+                                                  nonMatchB=nonMatchB,
+                                                  device=device)
+            print("Backpropagate and optimize")
+            # Backpropagate loss
+            loss.backward()
+            # Update weight
+            optimizer.step()
+            # Plot some shit
+            print("Epoch N°", epoch, "current Loss = ", loss.item())
+            print("Current loss =", loss, "Matching Loss =", MLoss, "Non-Matching Loss", MNLoss)
+        else:
+            print("No Match ! Continuing training without this sample !")
+            continue
     # Update scheduler
     print("Update scheduler")
     scheduler.step()
