@@ -247,6 +247,61 @@ class ContrastiveLoss(torch.nn.Module):
         # return global loss, matching loss and non-match loss
         return contrastiveLossSum, matchLossSum, nonMatchLossSum
 
+# Contrastive loss function with hard-negative mining (VARIATION)
+class ContrastiveLossVar(torch.nn.Module):
+    def __init__(self, margin=0.5, nonMatchLossWeight=1.0):
+        super(ContrastiveLossVar, self).__init__()
+        self.margin = margin
+        self.nonMatchLossWeight = nonMatchLossWeight
+    def forward(self, outA, outB, matchA, matchB, nonMatchA, nonMatchB, hardNegative, device):
+        # ----------------------------------------------------------------------------------
+        # INPUT :
+        # - Network output tensor outA and outB with the shape [B,H*W,C]
+        # - MatchA/MatchB and nonMatchA/nonMatchB with shape [B,NbMatch]
+        # - Compute and divide by the hard negative value in the nonMatch Loss
+        # - Device where to run the loss function
+        # Each Match/non-Match keypoint as been vectorize [x,y]->W*x+y
+        # OUPUT :
+        # - Loss sum from matching loss and non-match loss
+        # ---------------------------------------------------------------------------------
+        contrastiveLossSum = 0
+        matchLossSum = 0
+        nonMatchLossSum = 0
+        # for every element in the batch
+        for b in range(0,outA.size()[0]):
+            # get the number of match/non-match (tensor float)
+            nbMatch = len(matchA[b])
+            nbNonMatch = len(nonMatchA[b])
+            # create a tensor with the listed matched descriptors in the estimated descriptors map (net output)
+            matchADes = torch.index_select(outA[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(matchA[b])).to(device)).unsqueeze(0)
+            matchBDes = torch.index_select(outB[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(matchB[b])).to(device)).unsqueeze(0)
+            # create a tensor with the listed non-matched descriptors in the estimated descriptors map (net output)
+            nonMatchADes = torch.index_select(outA[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(nonMatchA[b])).to(device)).unsqueeze(0)
+            nonMatchBDes = torch.index_select(outB[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(nonMatchB[b])).to(device)).unsqueeze(0)
+            # calculate match loss (L2 distance)
+            matchLoss = (1.0/nbMatch) * (matchADes - matchBDes).pow(2).sum()
+            # calculate non-match loss (L2 distance with margin)
+            nonMatchloss = (nonMatchADes - nonMatchBDes).norm(2, 1)
+            # Hard negative scaling (pixelwise)
+            if hardNegative==True:
+                hardNegativeNonMatch = 0
+                nonMatchloss = torch.clamp(self.margin - nonMatchloss, min=0).pow(2)
+                hardNegativeNonMatch = len(torch.nonzero(nonMatchloss))
+                print("Number Hard-Negative =", hardNegativeNonMatch)
+                # final non_match loss with hard negative scaling
+                nonMatchloss = self.nonMatchLossWeight * (1.0/hardNegativeNonMatch) * nonMatchloss.sum()
+            else:
+                # final non_match loss
+                nonMatchloss = self.nonMatchLossWeight * (1.0/nbNonMatch) * nonMatchloss.sum()
+            # compute contrastive loss
+            contrastiveLoss = matchLoss + nonMatchloss
+            # update final losses
+            contrastiveLossSum += contrastiveLoss
+            matchLossSum += matchLoss
+            nonMatchLossSum += nonMatchloss
+        # return global loss, matching loss and non-match loss
+        return contrastiveLossSum, matchLossSum, nonMatchLossSum
+
 # Set the training/inference device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 if torch.cuda.is_available():
@@ -262,7 +317,7 @@ optimizer = optim.Adam(DDN.parameters(), lr=1.0e-4, weight_decay=1.0e-4)
 lrPower = 2
 lambda1 = lambda epoch: (1.0 - epoch / nbEpoch) ** lrPower
 scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=[lambda1])
-contrastiveLoss = ContrastiveLoss(margin=0.5, nonMatchLossWeight=1.0)
+contrastiveLoss = ContrastiveLossVar(margin=0.5, nonMatchLossWeight=1.0)
 # Init LoFTR network
 matcher = KF.LoFTR(pretrained='indoor').to(device)
 print("Matcher initialized")
@@ -290,7 +345,7 @@ for epoch in range(0,nbEpoch):
                                                                        ImgA=inputBatchACorr,
                                                                        ImgB=inputBatchBCorr,
                                                                        NumberNonMatchPerMatch=150,
-                                                                       SampleB=True)
+                                                                       SampleB=False)
         noMatch = False
         for b in range(batchSize):
             print(len(matchA[b]), "Match found and", len(nonMatchA[b]), "Non-Match Found in imageA =",b)
