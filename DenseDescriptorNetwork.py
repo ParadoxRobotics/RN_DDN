@@ -199,11 +199,13 @@ class ContrastiveLoss(torch.nn.Module):
         super(ContrastiveLoss, self).__init__()
         self.margin = margin
         self.nonMatchLossWeight = nonMatchLossWeight
-    def forward(self, outA, outB, matchA, matchB, nonMatchA, nonMatchB, device):
+    def forward(self, outA, outB, matchA, matchB, nonMatchA, nonMatchB, hardNegative, device):
         # ----------------------------------------------------------------------------------
         # INPUT :
         # - Network output tensor outA and outB with the shape [B,H*W,C]
         # - MatchA/MatchB and nonMatchA/nonMatchB with shape [B,NbMatch]
+        # - Compute and divide by the hard negative value in the nonMatch Loss
+        # - Device where to run the loss function
         # Each Match/non-Match keypoint as been vectorize [x,y]->W*x+y
         # OUPUT :
         # - Loss sum from matching loss and non-match loss
@@ -228,10 +230,14 @@ class ContrastiveLoss(torch.nn.Module):
             zerosVec = torch.zeros_like(nonMatchADes)
             pixelwiseNonMatchLoss = torch.max(zerosVec, self.margin-((nonMatchADes - nonMatchBDes).pow(2)))
             # Hard negative scaling (pixelwise)
-            hardNegativeNonMatch = len(torch.nonzero(pixelwiseNonMatchLoss))
-            print("Number Hard-Negative =", hardNegativeNonMatch)
-            # final non_match loss with hard negative scaling
-            nonMatchloss = self.nonMatchLossWeight * 1.0/hardNegativeNonMatch * pixelwiseNonMatchLoss.sum()
+            if hardNegative==True:
+                hardNegativeNonMatch = len(torch.nonzero(pixelwiseNonMatchLoss))
+                print("Number Hard-Negative =", hardNegativeNonMatch)
+                # final non_match loss with hard negative scaling
+                nonMatchloss = self.nonMatchLossWeight * 1.0/hardNegativeNonMatch * pixelwiseNonMatchLoss.sum()
+            else:
+                # final non_match loss
+                nonMatchloss = self.nonMatchLossWeight * 1.0/nbNonMatch * pixelwiseNonMatchLoss.sum()                
             # compute contrastive loss
             contrastiveLoss = matchLoss + nonMatchloss
             # update final losses
@@ -312,6 +318,7 @@ for epoch in range(0,nbEpoch):
                                                   matchB=matchB,
                                                   nonMatchA=nonMatchA,
                                                   nonMatchB=nonMatchB,
+                                                  hardNegative=True,
                                                   device=device)
             print("Backpropagate and optimize")
             # Backpropagate loss
