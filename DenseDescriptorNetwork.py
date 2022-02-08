@@ -52,14 +52,6 @@ class ImagePairDataset(data.Dataset):
         imgB = imgBMatch.clone()
         # Data augmentation for the image B (match and training)
         if self.augmentation == True:
-            # Random H flip
-            if random.random() > 0.5:
-                imgBMatch = transforms.functional.hflip(imgBMatch)
-                imgB = transforms.functional.hflip(imgB)
-            # Random V flip
-            if random.random() > 0.5:
-                imgBMatch = transforms.functional.vflip(imgBMatch)
-                imgB = transforms.functional.vflip(imgB)
             # Random ColorJitter
             if random.random() > 0.5:
                 imgB = self.colorJitter(imgB)
@@ -247,8 +239,8 @@ class ContrastiveLoss(torch.nn.Module):
         # return global loss, matching loss and non-match loss
         return contrastiveLossSum, matchLossSum, nonMatchLossSum
 
-# Contrastive loss function with hard-negative mining (VARIATION)
-class ContrastiveLossVar(torch.nn.Module):
+# Contrastive loss function with hard-negative mining (L2 VARIATION)
+class ContrastiveLossL2(torch.nn.Module):
     def __init__(self, margin=0.5, nonMatchLossWeight=1.0):
         super(ContrastiveLossVar, self).__init__()
         self.margin = margin
@@ -317,14 +309,14 @@ optimizer = optim.Adam(DDN.parameters(), lr=1.0e-4, weight_decay=1.0e-4)
 lrPower = 2
 lambda1 = lambda epoch: (1.0 - epoch / nbEpoch) ** lrPower
 scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=[lambda1])
-contrastiveLoss = ContrastiveLossVar(margin=0.5, nonMatchLossWeight=1.0)
+contrastiveLoss = ContrastiveLossL2(margin=0.5, nonMatchLossWeight=1.0)
 # Init LoFTR network
 matcher = KF.LoFTR(pretrained='indoor').to(device)
 print("Matcher initialized")
 # Load Training Dataset
 imgAFolderTraining = "/home/neurotronics/Bureau/DDN/dataset/ImgA"
 imgBFolderTraining = "/home/neurotronics/Bureau/DDN/dataset/ImgB"
-trainingDataset = ImagePairDataset(ImgADir=imgAFolderTraining, ImgBDir=imgBFolderTraining, Augmentation=False)
+trainingDataset = ImagePairDataset(ImgADir=imgAFolderTraining, ImgBDir=imgBFolderTraining, Augmentation=True)
 # Init dataloader for training and testing
 trainingLoader = data.DataLoader(trainingDataset, batch_size=batchSize, shuffle=False, num_workers=4)
 print("Dataset loaded !")
