@@ -222,7 +222,7 @@ class ContrastiveLoss(torch.nn.Module):
             nonMatchBDes = torch.index_select(outB[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(nonMatchB[b])).to(device)).unsqueeze(0)
             # calculate match loss (L2 distance)
             matchLoss = (1.0/nbMatch) * (matchADes - matchBDes).pow(2).sum()
-            # calculate non-match loss (L2 distance with margin)
+            # calculate non-match loss
             zerosVec = torch.zeros_like(nonMatchADes)
             pixelwiseNonMatchLoss = torch.max(zerosVec, self.margin-((nonMatchADes - nonMatchBDes).pow(2)))
             # Hard negative scaling (pixelwise)
@@ -341,7 +341,7 @@ for epoch in range(0,nbEpoch):
                                                                        ImgA=inputBatchACorr,
                                                                        ImgB=inputBatchBCorr,
                                                                        NumberNonMatchPerMatch=150,
-                                                                       SampleB=True)
+                                                                       SampleB=False)
         noMatch = False
         for b in range(batchSize):
             print(len(matchA[b]), "Match found and", len(nonMatchA[b]), "Non-Match Found in imageA =",b)
