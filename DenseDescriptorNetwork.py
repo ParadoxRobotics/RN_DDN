@@ -114,11 +114,15 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch, SampleB
         # update global match list
         matchA.append(currentBatchA)
         matchB.append(currentBatchB)
+        # recompute the number of nonMatch per match if needed
+        nbSample = NumberNonMatchPerMatch
+        if len(currentBatchA) < NumberNonMatchPerMatch and SampleB == True:
+            nbSample = len(currentBatchB)
         # non-matchA / non-matchB are generate from matchB for every keypoints
         # in matchA
         for i in range(len(currentBatchA)):
             sample = 0
-            while (sample != NumberNonMatchPerMatch):
+            while (sample != nbSample):
                 # Sample from the entire image
                 if SampleB == False:
                     rdUVW = random.randint(0, (W*H)-1)
