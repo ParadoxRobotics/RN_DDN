@@ -345,7 +345,7 @@ for epoch in range(0,nbEpoch):
                                                                        ImgA=inputBatchACorr,
                                                                        ImgB=inputBatchBCorr,
                                                                        NumberNonMatchPerMatch=150,
-                                                                       SampleB=False)
+                                                                       SampleB=True)
         noMatch = False
         for b in range(batchSize):
             print(len(matchA[b]), "Match found and", len(nonMatchA[b]), "Non-Match Found in imageA =",b)
