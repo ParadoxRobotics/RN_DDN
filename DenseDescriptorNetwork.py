@@ -6,6 +6,7 @@
 #                            /_/
 # Dense Descriptor Network for object detection, manipulation and navigation.
 # Author : Munch Quentin, 2022.
+# TRAINING CODE
 
 # General and computer vision lib
 import os
@@ -186,7 +187,8 @@ class VisualDescriptorNet(torch.nn.Module):
         up2 += nn.functional.interpolate(up3, size=up2Size)
         up1 += nn.functional.interpolate(up2, size=up1Size)
         finalUp = nn.functional.interpolate(up1, size=InputSize)
-        out = self.activation(finalUp)
+        # Activation + L2 Normalization
+        out = F.normalize(self.activation(finalUp), p=2, dim=1)
         return out
 
 # Contrastive loss function with hard-negative mining
@@ -303,12 +305,14 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 if torch.cuda.is_available():
     # flush GPU memory
     torch.cuda.empty_cache()
+# Model weight and dict path
+modelPath = '/home/neurotronics/Bureau/DDN/DDN_Model/DNN'
 # Init DDN Network, Adam optimizer, scheduler and loss function
 descriptorSize = 16
 batchSize = 1
-nbEpoch = 2
+nbEpoch = 50
 DDN = VisualDescriptorNet(descriptorDim=descriptorSize).to(device)
-print("DDN Network initialized with D =", descriptorSize, )
+print("DDN Network initialized with D =", descriptorSize)
 optimizer = optim.Adam(DDN.parameters(), lr=1.0e-4, weight_decay=1.0e-4)
 lrPower = 2
 lambda1 = lambda epoch: (1.0 - epoch / nbEpoch) ** lrPower
@@ -385,3 +389,7 @@ for epoch in range(0,nbEpoch):
     # Update scheduler
     print("Update scheduler")
     scheduler.step()
+
+# Saving state dict and weight matrix of the model
+torch.save(DDN.state_dict(), modelPath)
+print("Current Model dict saved")
