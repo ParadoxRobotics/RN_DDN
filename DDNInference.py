@@ -97,6 +97,32 @@ def SingleKeypointMatching(KptA, DesA, DesB):
     kptVal = normDiff[KptB[0], KptB[1]]
     return KptB, normDiff, kptVal
 
+# DoG-SIFT based keypoint matching
+def DoGDDN(ImgA, DesA, ImgB, DesB):
+    # ----------------------------------------------------------------------------------
+    # INPUT :
+    # - Grayscale ImageA containing the model [H,W,C]
+    # - Descriptor of the image A with shape = [H,W,D]
+    # - Grayscale ImageB containing the target [H,W,C]
+    # - Descriptor of the image B with shape = [H,W,D]
+    # OUPUT :
+    # - matched keypoint in ImgA and ImgB
+    # ---------------------------------------------------------------------------------
+    # Load detector based on DoG
+    SIFT = cv2.SIFT_create()
+    # Init bruteforce keypoint matcher
+    matcher = cv2.DescriptorMatcher_create("BruteForce")
+    # Extract keypoint from A and B
+    kptA = SIFT.detect(ImgA,None)
+    kptB = SIFT.detect(ImgA,None)
+    # Extract descriptor at each keypoint location
+    desKptA = []
+    desKptB = []
+    # Match Descriptor using L2 norm
+    matches = matcher.knnMatch(desKptA, desKptB, 2)
+    # return keypoints
+    return kptA, desKptB
+
 # Set the training/inference device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 if torch.cuda.is_available():
