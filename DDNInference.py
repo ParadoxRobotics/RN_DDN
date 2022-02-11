@@ -77,31 +77,25 @@ class VisualDescriptorNet(torch.nn.Module):
         return out
 
 # Single keypoint correspondence
-def SingleKeypointMatching(Kpt, DesA, DesB):
+def SingleKeypointMatching(KptA, DesA, DesB):
     # ----------------------------------------------------------------------------------
     # INPUT :
-    # - The matcher must be LoFTR type neural network
-    # - ImgA and ImgB must be a RGB/255 tensor with shape [B,C,H,W]
-    # - NumberNonMatchPerMatch is the number of non-match in imageB for each good
-    # match in A that need to be generated
-    # - SampleB is a flag that select the non-match sampling mode : True sample from
-    # current B matches; False sample randomly from the whole picture
+    # - Keypoint in the orginal image that need to be match in the target [Hy,Wx]
+    # - Descriptor of the image A with shape = [H,W,D]
+    # - Descriptor of the image B with shape = [H,W,D]
     # OUPUT :
-    # - matchA / matchB / nonMatchA / nonMatchB tensor with shape [B, nb_match]
-    # match/non-match = image_width * row + column
+    # - Matched Keypoint in the image B [Hy,Wx]
+    # - Correspondence L2 norm heatmap
+    # - Keypoint cost
     # ---------------------------------------------------------------------------------
-    descriptor_at_pixel = res_a[pixel_a[1], pixel_a[0]]
-    height, width, _ = res_a.shape
-
-    norm_diffs = np.sqrt(np.sum(np.square(res_b - descriptor_at_pixel), axis=2))
-
-    best_match_flattened_idx = np.argmin(norm_diffs)
-    best_match_xy = np.unravel_index(best_match_flattened_idx, norm_diffs.shape)
-    best_match_diff = norm_diffs[best_match_xy]
-
-    best_match_uv = (best_match_xy[1], best_match_xy[0])
-
-    return best_match_uv, best_match_diff, norm_diffs
+    kptDesA = DesA[Kpt[0], Kpt[1]]
+    # Compute L2 norm heatmap
+    normDiff = torch.sqrt(torch.sum(torch.square(DesB - kptDesA), dim=2))
+    # Get the min index, position and cost val
+    kptVectorIndex = torch.argmin(normDiff)
+    KptB = (int(kptVectorIndex%DesA.size()[1]), int(kptVectorIndex/DesA.size()[1]))
+    kptVal = normDiff[KptB[0], KptB[1]]
+    return KptB, normDiff, kptVal
 
 # Set the training/inference device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
