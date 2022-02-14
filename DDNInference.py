@@ -72,12 +72,12 @@ class VisualDescriptorNet(torch.nn.Module):
         up2 += nn.functional.interpolate(up3, size=up2Size)
         up1 += nn.functional.interpolate(up2, size=up1Size)
         finalUp = nn.functional.interpolate(up1, size=InputSize)
-        # Activation + L2 Normalization
-        out = F.normalize(self.activation(finalUp), p=2, dim=1)
+        # Activation
+        out = self.activation(finalUp)
         return out
 
 # Single keypoint correspondence
-def SingleKeypointMatching(KptA, DesA, DesB):
+def SingleKeypointMatching(KptA, DesA, DesB, KernelVariace=0.25):
     # ----------------------------------------------------------------------------------
     # INPUT :
     # - Keypoint in the orginal image that need to be match in the target [Hy,Wx]
@@ -86,42 +86,26 @@ def SingleKeypointMatching(KptA, DesA, DesB):
     # OUPUT :
     # - Matched Keypoint in the image B [Hy,Wx]
     # - Correspondence L2 norm heatmap
+    # - RGB gaussian heatmap
     # - Keypoint cost
     # ---------------------------------------------------------------------------------
-    kptDesA = DesA[Kpt[0], Kpt[1]]
+    # Extract normalized descriptor vector
+    kptDesA = F.normalize(DesA[KptA[0], KptA[1]], p=2, dim=1)
     # Compute L2 norm heatmap
-    normDiff = torch.sqrt(torch.sum(torch.square(DesB - kptDesA), dim=2))
+    normDiff = torch.sqrt(torch.sum(torch.square(F.normalize(DesB, p=2, dim=1) - kptDesA), dim=2))
     # Get the min index, position and cost val
     kptVectorIndex = torch.argmin(normDiff)
     KptB = (int(kptVectorIndex%DesA.size()[1]), int(kptVectorIndex/DesA.size()[1]))
     kptVal = normDiff[KptB[0], KptB[1]]
-    return KptB, normDiff, kptVal
-
-# DoG-SIFT based keypoint matching
-def DoGDDN(ImgA, DesA, ImgB, DesB):
-    # ----------------------------------------------------------------------------------
-    # INPUT :
-    # - Grayscale ImageA containing the model [H,W,C]
-    # - Descriptor of the image A with shape = [H,W,D]
-    # - Grayscale ImageB containing the target [H,W,C]
-    # - Descriptor of the image B with shape = [H,W,D]
-    # OUPUT :
-    # - matched keypoint in ImgA and ImgB
-    # ---------------------------------------------------------------------------------
-    # Load detector based on DoG
-    SIFT = cv2.SIFT_create()
-    # Init bruteforce keypoint matcher
-    matcher = cv2.DescriptorMatcher_create("BruteForce")
-    # Extract keypoint from A and B
-    kptA = SIFT.detect(ImgA,None)
-    kptB = SIFT.detect(ImgA,None)
-    # Extract descriptor at each keypoint location
-    desKptA = []
-    desKptB = []
-    # Match Descriptor using L2 norm
-    matches = matcher.knnMatch(desKptA, desKptB, 2)
-    # return keypoints
-    return kptA, desKptB
+    # compute gaussian heatmap
+    heatmap = np.copy(normDiff.cpu().numpy())
+    # Normalize between [0,1]
+    heatmap = np.exp(-heatmap/KernelVariace)
+    heatmap *= 255
+    # Map to color space
+    heatmap = heatmap.astype(np.uint8)
+    RGBHeatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+    return KptB, kptVal, normDiff, RGBHeatmap,
 
 # Set the training/inference device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")

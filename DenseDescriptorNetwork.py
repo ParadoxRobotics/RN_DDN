@@ -187,8 +187,8 @@ class VisualDescriptorNet(torch.nn.Module):
         up2 += nn.functional.interpolate(up3, size=up2Size)
         up1 += nn.functional.interpolate(up2, size=up1Size)
         finalUp = nn.functional.interpolate(up1, size=InputSize)
-        # Activation + L2 Normalization
-        out = F.normalize(self.activation(finalUp), p=2, dim=1)
+        # Activation
+        out = self.activation(finalUp)
         return out
 
 # Contrastive loss function with hard-negative mining
