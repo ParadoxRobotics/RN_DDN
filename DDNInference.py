@@ -29,6 +29,17 @@ from torchvision.io import read_image
 import kornia as K
 import kornia.feature as KF
 
+# Reticle drawing function 
+def draw_reticle(img, u, v, label_color):
+    white = (255, 255, 255)
+    cv2.circle(img, (u, v), 10, label_color, 1)
+    cv2.circle(img, (u, v), 11, white, 1)
+    cv2.circle(img, (u, v), 12, label_color, 1)
+    cv2.line(img, (u, v + 1), (u, v + 3), white, 1)
+    cv2.line(img, (u + 1, v), (u + 3, v), white, 1)
+    cv2.line(img, (u, v - 1), (u, v - 3), white, 1)
+    cv2.line(img, (u - 1, v), (u - 3, v), white, 1)
+
 # ResNet34 + FPN dense descriptor architecture
 class VisualDescriptorNet(torch.nn.Module):
     def __init__(self, descriptorDim):
