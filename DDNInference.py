@@ -29,7 +29,7 @@ from torchvision.io import read_image
 import kornia as K
 import kornia.feature as KF
 
-# Reticle drawing function 
+# Reticle drawing function
 def draw_reticle(img, u, v, label_color):
     white = (255, 255, 255)
     cv2.circle(img, (u, v), 10, label_color, 1)
@@ -101,12 +101,13 @@ def SingleKeypointMatching(KptA, DesA, DesB, KernelVariace=0.25):
     # - Keypoint cost
     # ---------------------------------------------------------------------------------
     # Extract normalized descriptor vector
-    kptDesA = F.normalize(DesA[KptA[0], KptA[1]], p=2, dim=1)
+    DesA = F.normalize(DesA, p=2, dim=2)
+    kptDesA = DesA[KptA[0], KptA[1]]
     # Compute L2 norm heatmap
-    normDiff = torch.sqrt(torch.sum(torch.square(F.normalize(DesB, p=2, dim=1) - kptDesA), dim=2))
+    normDiff = torch.sqrt(torch.sum(torch.square(F.normalize(DesB, p=2, dim=2) - kptDesA), dim=2))
     # Get the min index, position and cost val
     kptVectorIndex = torch.argmin(normDiff)
-    KptB = (int(kptVectorIndex%DesA.size()[1]), int(kptVectorIndex/DesA.size()[1]))
+    KptB = (int(kptVectorIndex/DesA.size()[1]), int(kptVectorIndex%DesA.size()[1]))
     kptVal = normDiff[KptB[0], KptB[1]]
     # compute gaussian heatmap
     heatmap = np.copy(normDiff.cpu().numpy())
@@ -116,7 +117,29 @@ def SingleKeypointMatching(KptA, DesA, DesB, KernelVariace=0.25):
     # Map to color space
     heatmap = heatmap.astype(np.uint8)
     RGBHeatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
-    return KptB, kptVal, normDiff, RGBHeatmap,
+    return KptB, kptVal, normDiff, RGBHeatmap
+
+# Template matching
+def TemplateMatching(ROI, DesA, DesB):
+    # ----------------------------------------------------------------------------------
+    # INPUT :
+    # - Model ROI in the descriptor space [TLx, TLy, BRx, BRy]
+    # - Descriptor of the image A with shape = [H,W,D]
+    # - Descriptor of the image B with shape = [H,W,D]
+    # OUPUT :
+    # - Feature matching Heatmap
+    # - Matching ROI
+    # ---------------------------------------------------------------------------------
+    # ROI zeroing
+    maskTensor = torch.ones(DesA.size())
+    maskTensor[] = 0
+    ModDesA = DesA*maskTensor
+    # Compute similarity (D axis)
+    simMeasure = torch.tensordot(F.normalize(ModDesA, p=2, dim=2), F.normalize(DesB, p=2, dim=2), dims=2)
+    # Compute scoring
+    scoreMap = torch.max()/torch.mean(simMeasure)
+    score = torch.mean(scoreMap)
+    return 
 
 # Set the training/inference device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
