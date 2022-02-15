@@ -6,6 +6,7 @@
 #                            /_/
 # Dense Descriptor Network for object detection, manipulation and navigation.
 # Author : Munch Quentin, 2022.
+# INFERENCE CODE
 
 # General and computer vision lib
 import os
@@ -118,28 +119,6 @@ def SingleKeypointMatching(KptA, DesA, DesB, KernelVariace=0.25):
     heatmap = heatmap.astype(np.uint8)
     RGBHeatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
     return KptB, kptVal, normDiff, RGBHeatmap
-
-# Template matching
-def TemplateMatching(ROI, DesA, DesB):
-    # ----------------------------------------------------------------------------------
-    # INPUT :
-    # - Model ROI in the descriptor space [TLx, TLy, BRx, BRy]
-    # - Descriptor of the image A with shape = [H,W,D]
-    # - Descriptor of the image B with shape = [H,W,D]
-    # OUPUT :
-    # - Feature matching Heatmap
-    # - Matching ROI
-    # ---------------------------------------------------------------------------------
-    # ROI zeroing
-    maskTensor = torch.ones(DesA.size())
-    maskTensor[] = 0
-    ModDesA = DesA*maskTensor
-    # Compute similarity (D axis)
-    simMeasure = torch.tensordot(F.normalize(ModDesA, p=2, dim=2), F.normalize(DesB, p=2, dim=2), dims=2)
-    # Compute scoring
-    scoreMap = torch.max()/torch.mean(simMeasure)
-    score = torch.mean(scoreMap)
-    return 
 
 # Set the training/inference device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
