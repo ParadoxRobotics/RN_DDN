@@ -248,7 +248,7 @@ class ContrastiveLoss(torch.nn.Module):
 # Contrastive loss function with hard-negative mining (L2 VARIATION)
 class ContrastiveLossL2(torch.nn.Module):
     def __init__(self, margin=0.5, nonMatchLossWeight=1.0):
-        super(ContrastiveLossVar, self).__init__()
+        super(ContrastiveLossL2, self).__init__()
         self.margin = margin
         self.nonMatchLossWeight = nonMatchLossWeight
     def forward(self, outA, outB, matchA, matchB, nonMatchA, nonMatchB, hardNegative, device):
