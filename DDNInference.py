@@ -127,13 +127,35 @@ if torch.cuda.is_available():
     torch.cuda.empty_cache()
 # Model weight and dict path
 modelPath = '/home/neurotronics/Bureau/DDN/DDN_Model/DNN'
-# Init DDN Network, Adam optimizer, scheduler and loss function
+# Image path
+imgAPath = '/home/neurotronics/Bureau/DDN/dataset/Test/model.png'
+imgBPath = '/home/neurotronics/Bureau/DDN/dataset/Test/target.png'
+# Init DDN Network
 descriptorSize = 16
 DDN = VisualDescriptorNet(descriptorDim=descriptorSize).to(device)
 print("DDN Network initialized with D =", descriptorSize)
 if os.path.isfile(modelPath):
+    # Load weight
     DDN.load_state_dict(torch.load(modelPath))
     DDN.eval()
     print("DDN loaded")
+    norm = transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    imgAMatch = read_image(imgAPath)
+    imgBMatch = read_image(imgBPath)
+    imgA = norm(imgAMatch/255)
+    imgA = imgA.view((1, *imgA.size())).type(torch.FloatTensor).to(device)
+    imgB = norm(imgBMatch/255)
+    imgB = imgB.view((1, *imgB.size())).type(torch.FloatTensor).to(device)
+    da = DDN(imgA)
+    db = DDN(imgB)
+    # plot DNN response
+    for i in range(0,descriptorSize):
+        fHt = da[0,i,:,:]
+        plt.matshow(fHt.cpu().detach().numpy())
+        plt.show()
+    for i in range(0,descriptorSize):
+        fHt = db[0,i,:,:]
+        plt.matshow(fHt.cpu().detach().numpy())
+        plt.show()
 else:
     print("No Network !")
