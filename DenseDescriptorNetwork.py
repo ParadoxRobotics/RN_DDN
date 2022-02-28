@@ -24,8 +24,9 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim import lr_scheduler
 import torch.utils.data as data
-from torchvision import models, datasets, transforms, utils
+from torchvision import datasets, transforms, utils
 from torchvision.io import read_image
+from ResNetModel import * # custom ResNet model
 # Kornia computer vision differential lib
 import kornia as K
 import kornia.feature as KF
@@ -144,51 +145,51 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch, SampleB
     # return the batched match/non-match
     return matchA, matchB, nonMatchA, nonMatchB
 
-# ResNet34 + FPN dense descriptor architecture
-class VisualDescriptorNet(torch.nn.Module):
-    def __init__(self, descriptorDim):
+# ResNet34 + FCN dense descriptor architecture
+class VisualDescriptorNet(nn.Module):
+    def __init__(self, DescriptorDim, OutputNorm):
         super(VisualDescriptorNet, self).__init__()
-        # D dimensionnal descriptors
-        self.descriptorDim = descriptorDim
-        # Get full pretrained Resnet34
-        self.fullResNet = models.resnet34(pretrained=True)
-        # Get pretrained Resnet34 without last actiavtion layer (softmax)
-        self.ResNet = nn.Sequential(*list(self.fullResNet.children())[:-2])
+        # Load basic conv ResNet34 without the avgPool and with dilated stride
+        resnet32_8s = resnet34(fully_conv=True, pretrained=True, output_stride=32, remove_avg_pool_layer=True)
+        # Get network expension
+        expRate = resnet32_8s.layer1[0].expansion
+        # Create a linear layer and set the network
+        resnet34.fc = nn.Sequential()
+        self.resnet32_8s = resnet32_8s
         # build lateral convolutional layer for the the FCN
-        self.upConv4 = nn.Conv2d(64, self.descriptorDim, kernel_size=1)
-        self.upConv8 = nn.Conv2d(128, self.descriptorDim, kernel_size=1)
-        self.upConv16 = nn.Conv2d(256, self.descriptorDim, kernel_size=1)
-        self.upConv32 = nn.Conv2d(512, self.descriptorDim, kernel_size=1)
-        # actiavtion function for the last layer (decoder)
-        self.activation = nn.ReLU()
+        self.upConv32 = nn.Conv2d(512*expRate, DescriptorDim, kernel_size=1)
+        self.upConv16 = nn.Conv2d(256*expRate, DescriptorDim, kernel_size=1)
+        self.upConv8 = nn.Conv2d(128*expRate, DescriptorDim, kernel_size=1)
+        # if true, compute the L2 normalized output
+        self.outNorm = OutputNorm
     # Single Network Forward pass
     def forward(self, x):
         # get input size -> for the upsampling
-        InputSize = x.size()[2:]
-        # processing with the resnet + lateral convolution
-        x = self.ResNet[0](x) # conv1
-        x = self.ResNet[1](x) # bn1
-        x = self.ResNet[2](x) # ReLU1
-        x = self.ResNet[3](x) # maxpool1
-        x = self.ResNet[4](x) # layer1 size=(N, 64, x.H/4, x.W/4)
-        up1 = self.upConv4(x)
-        x = self.ResNet[5](x) # layer2 size=(N, 128, x.H/8, x.W/8)
-        up2 = self.upConv8(x)
-        x = self.ResNet[6](x) # layer3 size=(N, 256, x.H/16, x.W/16)
-        up3 = self.upConv16(x)
-        x = self.ResNet[7](x) # layer4 size=(N, 512, x.H/32, x.W/32)
-        up4 = self.upConv32(x)
-        # get output size of the lateral convolution
-        up1Size = up1.size()[2:]
-        up2Size = up2.size()[2:]
-        up3Size = up3.size()[2:]
+        inputSize = x.size()[2:]
+        # forward pass of the first block
+        x = self.resnet32_8s.conv1(x)
+        x = self.resnet32_8s.bn1(x)
+        x = self.resnet32_8s.relu(x)
+        x = self.resnet32_8s.maxpool(x)
+        # residual layer + lateral conv computation
+        x = self.resnet32_8s.layer1(x)
+        x = self.resnet32_8s.layer2(x)
+        up8 = self.upConv8(x)
+        x = self.resnet32_8s.layer3(x)
+        up16 = self.upConv16(x)
+        x = self.resnet32_8s.layer4(x)
+        up32 = self.upConv32(x)
+        # get size for the upsampling
+        up16Size = up16.size()[2:]
+        up8Size = up8.size()[2:]
         # compute residual upsampling
-        up3 += nn.functional.interpolate(up4, size=up3Size)
-        up2 += nn.functional.interpolate(up3, size=up2Size)
-        up1 += nn.functional.interpolate(up2, size=up1Size)
-        finalUp = nn.functional.interpolate(up1, size=InputSize)
-        # Activation
-        out = self.activation(finalUp)
+        up16 += F.interpolate(up32, size=up16Size)
+        up8 += F.interpolate(up16, size=up8Size)
+        out = F.interpolate(up8, size=inputSize)
+        # normalize if needed
+        if (self.outNorm==True):
+            out = out/torch.norm(out, dim=1, keepdim=True)
+        # return descriptor
         return out
 
 # Contrastive loss function with hard-negative mining
@@ -300,6 +301,62 @@ class ContrastiveLossL2(torch.nn.Module):
         # return global loss, matching loss and non-match loss
         return contrastiveLossSum, matchLossSum, nonMatchLossSum
 
+# Contrastive loss function
+class OriginalContrastiveLoss(torch.nn.Module):
+    def __init__(self, margin=0.5, nonMatchLossWeight=1.0):
+        super(OriginalContrastiveLoss, self).__init__()
+        self.margin = margin
+        self.nonMatchLossWeight = nonMatchLossWeight
+    def forward(self, outA, outB, matchA, matchB, nonMatchA, nonMatchB, hardNegative, device):
+        # ----------------------------------------------------------------------------------
+        # INPUT :
+        # - Network output tensor outA and outB with the shape [B,H*W,C]
+        # - MatchA/MatchB and nonMatchA/nonMatchB with shape [B,NbMatch]
+        # - Compute and divide by the hard negative value in the nonMatch Loss
+        # - Device where to run the loss function
+        # Each Match/non-Match keypoint as been vectorize [x,y]->W*x+y
+        # OUPUT :
+        # - Loss sum from matching loss and non-match loss
+        # ---------------------------------------------------------------------------------
+        contrastiveLossSum = 0
+        matchLossSum = 0
+        nonMatchLossSum = 0
+        # for every element in the batch
+        for b in range(0, outA.size()[0]):
+            # get the number of match/non-match (tensor float)
+            nbMatch = len(matchA[b])
+            nbNonMatch = len(nonMatchA[b])
+            # create a tensor with the listed matched descriptors in the estimated descriptors map (net output)
+            matchADes = torch.index_select(outA[b], 1, torch.Tensor.int(torch.Tensor(matchA[b])).to(device))
+            matchBDes = torch.index_select(outB[b], 1, torch.Tensor.int(torch.Tensor(matchB[b])).to(device))
+            # create a tensor with the listed non-matched descriptors in the estimated descriptors map (net output)
+            nonMatchADes = torch.index_select(outA[b], 1, torch.Tensor.int(torch.Tensor(nonMatchA[b])).to(device))
+            nonMatchBDes = torch.index_select(outB[b], 1, torch.Tensor.int(torch.Tensor(nonMatchB[b])).to(device))
+            # calculate match loss (L2 distance)
+            matchLoss = (1.0/nbMatch) * (matchADes - matchBDes).pow(2).sum()
+            # calculate non-match loss (L2 distance with margin)
+            nonMatchloss = (nonMatchADes - nonMatchBDes).pow(2).sum(dim=2)
+            nonMatchloss = torch.add(torch.neg(nonMatchloss), self.margin)
+            zerosVec = torch.zeros_like(nonMatchloss)
+            nonMatchloss = torch.max(zerosVec, nonMatchloss)
+            # Hard negative scaling (pixelwise)
+            if hardNegative==True:
+                # compute hard negative
+                hardNegativeNonMatch = len(torch.nonzero(nonMatchloss))
+                # final non_match loss with Hard negative scaling
+                nonMatchloss = self.nonMatchLossWeight * (1.0/hardNegativeNonMatch) * nonMatchloss.sum()
+            else:
+                # final non_match loss
+                nonMatchloss = self.nonMatchLossWeight * (1.0/nbNonMatch) * nonMatchloss.sum()
+            # compute contrastive loss
+            contrastiveLoss = matchLoss + nonMatchloss
+            # update final losses
+            contrastiveLossSum += contrastiveLoss
+            matchLossSum += matchLoss
+            nonMatchLossSum += nonMatchloss
+        # return global loss, matching loss and non-match loss
+        return contrastiveLossSum, matchLossSum, nonMatchLossSum
+
 # Set the training/inference device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 if torch.cuda.is_available():
@@ -309,15 +366,15 @@ if torch.cuda.is_available():
 modelPath = '/home/neurotronics/Bureau/DDN/DDN_Model/DNN'
 # Init DDN Network, Adam optimizer, scheduler and loss function
 descriptorSize = 16
-batchSize = 1
-nbEpoch = 50
-DDN = VisualDescriptorNet(descriptorDim=descriptorSize).to(device)
+batchSize = 2
+nbEpoch = 1
+DDN = VisualDescriptorNet(DescriptorDim=descriptorSize, OutputNorm=False).to(device)
 print("DDN Network initialized with D =", descriptorSize)
 optimizer = optim.Adam(DDN.parameters(), lr=1.0e-4, weight_decay=1.0e-4)
 lrPower = 2
 lambda1 = lambda epoch: (1.0 - epoch / nbEpoch) ** lrPower
 scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=[lambda1])
-contrastiveLoss = ContrastiveLossL2(margin=0.5, nonMatchLossWeight=1.0)
+contrastiveLoss = ContrastiveLoss(margin=0.5, nonMatchLossWeight=1.0)
 # Init LoFTR network
 matcher = KF.LoFTR(pretrained='indoor').to(device)
 print("Matcher initialized")
@@ -329,6 +386,8 @@ trainingDataset = ImagePairDataset(ImgADir=imgAFolderTraining, ImgBDir=imgBFolde
 trainingLoader = data.DataLoader(trainingDataset, batch_size=batchSize, shuffle=False, num_workers=4)
 print("Dataset loaded !")
 
+
+i = 0
 # training / testing
 for epoch in range(0,nbEpoch):
     # Set network to trainin mode
@@ -373,7 +432,7 @@ for epoch in range(0,nbEpoch):
                                                   matchB=matchB,
                                                   nonMatchA=nonMatchA,
                                                   nonMatchB=nonMatchB,
-                                                  hardNegative=False,
+                                                  hardNegative=True,
                                                   device=device)
             print("Backpropagate and optimize")
             # Backpropagate loss
@@ -383,6 +442,9 @@ for epoch in range(0,nbEpoch):
             # Plot some shit
             print("Epoch N°", epoch, "current Loss = ", loss.item())
             print("Current loss =", loss.item(), "Matching Loss =", MLoss.item(), "Non-Matching Loss", MNLoss.item())
+            i+=1
+            if i == 50:
+                break;
         else:
             print("No Match ! Continuing training without this sample !")
             continue
