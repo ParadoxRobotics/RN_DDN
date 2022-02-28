@@ -80,7 +80,7 @@ def get_loss_original(self, image_a_pred, image_b_pred, matches_a,
 # Contrastive loss function
 class ContrastiveLoss(torch.nn.Module):
     def __init__(self, margin=0.5, nonMatchLossWeight=1.0):
-        super(ContrastiveLossL2, self).__init__()
+        super(ContrastiveLoss, self).__init__()
         self.margin = margin
         self.nonMatchLossWeight = nonMatchLossWeight
     def forward(self, outA, outB, matchA, matchB, nonMatchA, nonMatchB, hardNegative, device):
