@@ -83,7 +83,7 @@ class ContrastiveLoss(torch.nn.Module):
         super(ContrastiveLossL2, self).__init__()
         self.margin = margin
         self.nonMatchLossWeight = nonMatchLossWeight
-    def forward(self, outA, outB, matchA, matchB, nonMatchA, nonMatchB, device):
+    def forward(self, outA, outB, matchA, matchB, nonMatchA, nonMatchB, hardNegative, device):
         # ----------------------------------------------------------------------------------
         # INPUT :
         # - Network output tensor outA and outB with the shape [B,H*W,C]
@@ -114,8 +114,16 @@ class ContrastiveLoss(torch.nn.Module):
             nonMatchloss = (nonMatchADes - nonMatchBDes).pow(2).sum(dim=2)
             nonMatchloss = torch.add(torch.neg(nonMatchloss), self.margin)
             zerosVec = torch.zeros_like(nonMatchloss)
-            # final non_match loss
-            nonMatchloss = self.nonMatchLossWeight * (1.0/nbNonMatch) * torch.max(zerosVec, nonMatchloss).sum()
+            nonMatchloss = torch.max(zerosVec, nonMatchloss)
+            # Hard negative scaling (pixelwise)
+            if hardNegative==True:
+                # compute hard negative
+                hardNegativeNonMatch = len(torch.nonzero(nonMatchloss))
+                # final non_match loss with Hard negative scaling
+                nonMatchloss = self.nonMatchLossWeight * (1.0/hardNegativeNonMatch) * nonMatchloss.sum()
+            else:
+                # final non_match loss
+                nonMatchloss = self.nonMatchLossWeight * (1.0/nbNonMatch) * nonMatchloss
             # compute contrastive loss
             contrastiveLoss = matchLoss + nonMatchloss
             # update final losses
@@ -123,4 +131,4 @@ class ContrastiveLoss(torch.nn.Module):
             matchLossSum += matchLoss
             nonMatchLossSum += nonMatchloss
         # return global loss, matching loss and non-match loss
-        return contrastiveLossSum, matchLossSum, nonMatchLossSum
+        return contrastiveLossSum, matchLossSum,
