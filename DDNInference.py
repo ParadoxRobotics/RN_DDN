@@ -24,8 +24,9 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.optim import lr_scheduler
 import torch.utils.data as data
-from torchvision import models, datasets, transforms, utils
+from torchvision import datasets, transforms, utils
 from torchvision.io import read_image
+from ResNetModel import * # custom ResNet model
 # Kornia computer vision differential lib
 import kornia as K
 import kornia.feature as KF
@@ -41,51 +42,51 @@ def draw_reticle(img, u, v, label_color):
     cv2.line(img, (u, v - 1), (u, v - 3), white, 1)
     cv2.line(img, (u - 1, v), (u - 3, v), white, 1)
 
-# ResNet34 + FPN dense descriptor architecture
-class VisualDescriptorNet(torch.nn.Module):
-    def __init__(self, descriptorDim):
+# ResNet34 + FCN dense descriptor architecture
+class VisualDescriptorNet(nn.Module):
+    def __init__(self, DescriptorDim, OutputNorm):
         super(VisualDescriptorNet, self).__init__()
-        # D dimensionnal descriptors
-        self.descriptorDim = descriptorDim
-        # Get full pretrained Resnet34
-        self.fullResNet = models.resnet34(pretrained=True)
-        # Get pretrained Resnet34 without last actiavtion layer (softmax)
-        self.ResNet = nn.Sequential(*list(self.fullResNet.children())[:-2])
+        # Load basic conv ResNet34 without the avgPool and with dilated stride
+        resnet32_8s = resnet34(fully_conv=True, pretrained=True, output_stride=32, remove_avg_pool_layer=True)
+        # Get network expension
+        expRate = resnet32_8s.layer1[0].expansion
+        # Create a linear layer and set the network
+        resnet34.fc = nn.Sequential()
+        self.resnet32_8s = resnet32_8s
         # build lateral convolutional layer for the the FCN
-        self.upConv4 = nn.Conv2d(64, self.descriptorDim, kernel_size=1)
-        self.upConv8 = nn.Conv2d(128, self.descriptorDim, kernel_size=1)
-        self.upConv16 = nn.Conv2d(256, self.descriptorDim, kernel_size=1)
-        self.upConv32 = nn.Conv2d(512, self.descriptorDim, kernel_size=1)
-        # actiavtion function for the last layer (decoder)
-        self.activation = nn.ReLU()
+        self.upConv32 = nn.Conv2d(512*expRate, DescriptorDim, kernel_size=1)
+        self.upConv16 = nn.Conv2d(256*expRate, DescriptorDim, kernel_size=1)
+        self.upConv8 = nn.Conv2d(128*expRate, DescriptorDim, kernel_size=1)
+        # if true, compute the L2 normalized output
+        self.outNorm = OutputNorm
     # Single Network Forward pass
     def forward(self, x):
         # get input size -> for the upsampling
-        InputSize = x.size()[2:]
-        # processing with the resnet + lateral convolution
-        x = self.ResNet[0](x) # conv1
-        x = self.ResNet[1](x) # bn1
-        x = self.ResNet[2](x) # ReLU1
-        x = self.ResNet[3](x) # maxpool1
-        x = self.ResNet[4](x) # layer1 size=(N, 64, x.H/4, x.W/4)
-        up1 = self.upConv4(x)
-        x = self.ResNet[5](x) # layer2 size=(N, 128, x.H/8, x.W/8)
-        up2 = self.upConv8(x)
-        x = self.ResNet[6](x) # layer3 size=(N, 256, x.H/16, x.W/16)
-        up3 = self.upConv16(x)
-        x = self.ResNet[7](x) # layer4 size=(N, 512, x.H/32, x.W/32)
-        up4 = self.upConv32(x)
-        # get output size of the lateral convolution
-        up1Size = up1.size()[2:]
-        up2Size = up2.size()[2:]
-        up3Size = up3.size()[2:]
+        inputSize = x.size()[2:]
+        # forward pass of the first block
+        x = self.resnet32_8s.conv1(x)
+        x = self.resnet32_8s.bn1(x)
+        x = self.resnet32_8s.relu(x)
+        x = self.resnet32_8s.maxpool(x)
+        # residual layer + lateral conv computation
+        x = self.resnet32_8s.layer1(x)
+        x = self.resnet32_8s.layer2(x)
+        up8 = self.upConv8(x)
+        x = self.resnet32_8s.layer3(x)
+        up16 = self.upConv16(x)
+        x = self.resnet32_8s.layer4(x)
+        up32 = self.upConv32(x)
+        # get size for the upsampling
+        up16Size = up16.size()[2:]
+        up8Size = up8.size()[2:]
         # compute residual upsampling
-        up3 += nn.functional.interpolate(up4, size=up3Size)
-        up2 += nn.functional.interpolate(up3, size=up2Size)
-        up1 += nn.functional.interpolate(up2, size=up1Size)
-        finalUp = nn.functional.interpolate(up1, size=InputSize)
-        # Activation
-        out = self.activation(finalUp)
+        up16 += F.interpolate(up32, size=up16Size)
+        up8 += F.interpolate(up16, size=up8Size)
+        out = F.interpolate(up8, size=inputSize)
+        # normalize if needed
+        if (self.outNorm==True):
+            out = out/torch.norm(out, dim=1, keepdim=True)
+        # return descriptor
         return out
 
 # Single keypoint correspondence
@@ -131,8 +132,8 @@ modelPath = '/home/neurotronics/Bureau/DDN/DDN_Model/DNN'
 imgAPath = '/home/neurotronics/Bureau/DDN/dataset/Test/model.png'
 imgBPath = '/home/neurotronics/Bureau/DDN/dataset/Test/target.png'
 # Init DDN Network
-descriptorSize = 16
-DDN = VisualDescriptorNet(descriptorDim=descriptorSize).to(device)
+descriptorSize = 3
+DDN = VisualDescriptorNet(DescriptorDim=descriptorSize, OutputNorm=False).to(device)
 print("DDN Network initialized with D =", descriptorSize)
 if os.path.isfile(modelPath):
     # Load weight
