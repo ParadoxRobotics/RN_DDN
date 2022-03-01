@@ -155,7 +155,7 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
         nonMatchA.append(currentBatchNA)
         nonMatchB.append(currentBatchNB)
     # return the batched match/non-match
-    return matchA, matchB, nonMatchA, nonMatchB, kp_A, kp
+    return matchA, matchB, nonMatchA, nonMatchB, kp_A, kp_B
 
 # Set the training/inference device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
