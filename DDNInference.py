@@ -132,7 +132,7 @@ modelPath = '/home/neurotronics/Bureau/DDN/DDN_Model/DNN'
 imgAPath = '/home/neurotronics/Bureau/DDN/dataset/Test/model.png'
 imgBPath = '/home/neurotronics/Bureau/DDN/dataset/Test/target.png'
 # Init DDN Network
-descriptorSize = 3
+descriptorSize = 16
 DDN = VisualDescriptorNet(DescriptorDim=descriptorSize, OutputNorm=False).to(device)
 print("DDN Network initialized with D =", descriptorSize)
 if os.path.isfile(modelPath):
