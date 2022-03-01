@@ -108,7 +108,6 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
         currentBatchAuv = []
         currentBatchBuv = []
         currentBatchNAuv = []
-        currentBatchNBuv = []
         # matchA / matchB are extract from keypoints at a specific batch
         for i in range(batchIndexKeyoints.shape[0]):
             if batchIndexKeyoints[i] == batch:
@@ -123,28 +122,40 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
         matchB.append(currentBatchB)
         # non-matchA / non-matchB are generate from matchB for every keypoints
         # in matchA
+        # Copy matchA in respect to the number of NumberNonMatchPerMatch
         for i in range(len(currentBatchA)):
-            sample = 0
-            while (sample != NumberNonMatchPerMatch):
-                # Sample from the entire image
-                randNumber = torch.rand(2,1)
-                randNumber[0,:] = randNumber[0,:]*W
-                randNumber[1,:] = randNumber[1,:]*H
-                randNumberInt = torch.floor(randNumber)
-                rdUVW = (randNumberInt[0], randNumberInt[1])
-                if rdUVW != currentBatchBuv[i] and np.absolute(rdUVW[0]-currentBatchAuv[i][0]) > nonMatchTh  and np.absolute(rdUVW[1]-currentBatchAuv[i][1]) > nonMatchTh:
-                    # update UV
-                    currentBatchNAuv.append(currentBatchAuv[i])
-                    currentBatchNBuv.append(rdUVW)
-                    # update Linear
-                    currentBatchNA.append(currentBatchA[i])
-                    currentBatchNB.append(W * int(rdUVW[1]) + int(rdUVW[0]))
-                    sample += 1
+            for s in range(NumberNonMatchPerMatch):
+                # Update Linear and UV nonMatchA
+                currentBatchNA.append(currentBatchA[i])
+                currentBatchNAuv.append(currentBatchAuv[i])
+        # generate sample point
+        rd = np.random.rand(NumberNonMatchPerMatch*len(currentBatchNA), 2)
+        rd[:,0] = rd[:,0]*W
+        rd[:,1] = rd[:,1]*H
+        rd = np.floor(rd)
+        # update non-match given distance contraint
+        for m in range(nbsample*len(currentBatchNA)):
+            if np.absolute(rd[m,0]-currentBatchNAuv[m][0]) > nonMatchTh and np.absolute(rd[m,1]-currentBatchNAuv[m][1]) > nonMatchTh:
+                # update Linear nonMatchB
+                currentBatchNB.append(W * int(rd[m,1]) + int(rd[m,0]))
+            else:
+                # modify non-match in accordance to the image size
+                rdval = np.random.rand(1, 2)
+                rdval[0,0] = rdval[0,0]*W
+                rdval[0,1] = rdval[0,1]*H
+                rdval = np.floor(rdval)
+                while np.absolute(rdval[0,0]-currentBatchNAuv[m][0]) > nonMatchTh and np.absolute(rdval[0,1]-currentBatchNAuv[m][1]) > nonMatchTh:
+                    rdval = np.random.rand(1, 2)
+                    rdval[0,0] = rdval[0,0]*W
+                    rdval[0,1] = rdval[0,1]*H
+                    rdval = np.floor(rdval)
+                # update Linear nonMatchB
+                currentBatchNB.append(W * int(rdval[0,1]) + int(rdval[0,0]))
         # update global non-match list
         nonMatchA.append(currentBatchNA)
         nonMatchB.append(currentBatchNB)
     # return the batched match/non-match
-    return matchA, matchB, nonMatchA, nonMatchB, kp_A, kp_B
+    return matchA, matchB, nonMatchA, nonMatchB, kp_A, kp
 
 # Set the training/inference device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
