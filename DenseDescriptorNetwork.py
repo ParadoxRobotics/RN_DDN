@@ -67,7 +67,7 @@ class ImagePairDataset(data.Dataset):
         return pair
 
 # Find correspondences between 2 images and generate non-matches from it
-def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch, SampleB):
+def CorrespondenceGeneratorOld(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
     # ----------------------------------------------------------------------------------
     # INPUT :
     # - The matcher must be LoFTR type neural network
@@ -116,29 +116,111 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch, SampleB
         # update global match list
         matchA.append(currentBatchA)
         matchB.append(currentBatchB)
-        # recompute the number of nonMatch per match if needed
-        nbSample = NumberNonMatchPerMatch
-        if len(currentBatchA) < NumberNonMatchPerMatch and SampleB == True:
-            nbSample = len(currentBatchB)
         # non-matchA / non-matchB are generate from matchB for every keypoints
         # in matchA
         for i in range(len(currentBatchA)):
             sample = 0
-            while (sample != nbSample):
+            while (sample != NumberNonMatchPerMatch):
                 # Sample from the entire image
-                if SampleB == False:
-                    rdUVW = random.randint(0, (W*H)-1)
-                    if rdUVW != currentBatchB[i]:
-                        currentBatchNA.append(currentBatchA[i])
-                        currentBatchNB.append(rdUVW)
-                        sample += 1
-                # Sample from the current B match
-                else:
-                    sampleB = random.sample(currentBatchB, 1)
-                    if sampleB != currentBatchB[i]:
-                        currentBatchNA.append(currentBatchA[i])
-                        currentBatchNB.append(sampleB[0])
-                        sample += 1
+                rdUVW = random.randint(0, (W*H)-1)
+                if rdUVW != currentBatchB[i]:
+                    currentBatchNA.append(currentBatchA[i])
+                    currentBatchNB.append(rdUVW)
+                    sample += 1
+        # update global non-match list
+        nonMatchA.append(currentBatchNA)
+        nonMatchB.append(currentBatchNB)
+    # return the batched match/non-match
+    return matchA, matchB, nonMatchA, nonMatchB
+
+# Find correspondences between 2 images and generate non-matches from it
+def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
+    # ----------------------------------------------------------------------------------
+    # INPUT :
+    # - The matcher must be LoFTR type neural network
+    # - ImgA and ImgB must be a RGB/255 tensor with shape [B,C,H,W]
+    # - NumberNonMatchPerMatch is the number of non-match in imageB for each good
+    # match in A that need to be generated
+    # OUPUT :
+    # - matchA / matchB / nonMatchA / nonMatchB tensor with shape [B, nb_match]
+    # match/non-match = image_width * row + column
+    # ---------------------------------------------------------------------------------
+    # Non match distance threshold
+    nonMatchTh = 1.0
+    # Get batch size
+    batchSize = ImgA.size()[0]
+    H = ImgA.size()[2]
+    W = ImgA.size()[3]
+    # Create a dict for the 2 images in grayscale
+    inputDict = {"image0": K.color.rgb_to_grayscale(ImgA),
+                 "image1": K.color.rgb_to_grayscale(ImgB)}
+    # Find correspondences using the LoFTR network
+    with torch.no_grad():
+        correspondences = Matcher(inputDict)
+    # get keypoints and batch indexes
+    kp_A = correspondences['keypoints0'].cpu().numpy()
+    kp_B = correspondences['keypoints1'].cpu().numpy()
+    batchIndexKeyoints = correspondences['batch_indexes'].cpu().numpy()
+    print(kp_A.shape[0],"Correspondences found using LoFTR in this batch")
+    # create empty list
+    matchA = []
+    matchB = []
+    nonMatchA = []
+    nonMatchB = []
+    # create matchA/matchB and non-matchA/non-matchB
+    for batch in range(0, batchSize):
+        # current batch list (linear)
+        currentBatchA = []
+        currentBatchB = []
+        currentBatchNA = []
+        currentBatchNB = []
+        # current batch list (UV)
+        currentBatchAuv = []
+        currentBatchBuv = []
+        currentBatchNAuv = []
+        # matchA / matchB are extract from keypoints at a specific batch
+        for i in range(batchIndexKeyoints.shape[0]):
+            if batchIndexKeyoints[i] == batch:
+                # update UV
+                currentBatchAuv.append((int(kp_A[i,0]), int(kp_A[i,1])))
+                currentBatchBuv.append((int(kp_B[i,0]), int(kp_B[i,1])))
+                # update Linear
+                currentBatchA.append(W * int(kp_A[i,1]) + int(kp_A[i,0]))
+                currentBatchB.append(W * int(kp_B[i,1]) + int(kp_B[i,0]))
+        # update global match list
+        matchA.append(currentBatchA)
+        matchB.append(currentBatchB)
+        # non-matchA / non-matchB are generate from matchB for every keypoints
+        # in matchA
+        # Copy matchA in respect to the number of NumberNonMatchPerMatch
+        for i in range(len(currentBatchA)):
+            for s in range(NumberNonMatchPerMatch):
+                # Update Linear and UV nonMatchA
+                currentBatchNA.append(currentBatchA[i])
+                currentBatchNAuv.append(currentBatchAuv[i])
+        # generate sample point
+        rd = np.random.rand(len(currentBatchNA), 2)
+        rd[:,0] = rd[:,0]*W
+        rd[:,1] = rd[:,1]*H
+        rd = np.floor(rd)
+        # update non-match given distance contraint
+        for m in range(len(currentBatchNA)):
+            if np.absolute(rd[m,0]-currentBatchNAuv[m][0]) > nonMatchTh and np.absolute(rd[m,1]-currentBatchNAuv[m][1]) > nonMatchTh:
+                # update Linear nonMatchB
+                currentBatchNB.append(W * int(rd[m,1]) + int(rd[m,0]))
+            else:
+                # modify non-match in accordance to the image size
+                rdval = np.random.rand(1, 2)
+                rdval[0,0] = rdval[0,0]*W
+                rdval[0,1] = rdval[0,1]*H
+                rdval = np.floor(rdval)
+                while np.absolute(rdval[0,0]-currentBatchNAuv[m][0]) > nonMatchTh and np.absolute(rdval[0,1]-currentBatchNAuv[m][1]) > nonMatchTh:
+                    rdval = np.random.rand(1, 2)
+                    rdval[0,0] = rdval[0,0]*W
+                    rdval[0,1] = rdval[0,1]*H
+                    rdval = np.floor(rdval)
+                # update Linear nonMatchB
+                currentBatchNB.append(W * int(rdval[0,1]) + int(rdval[0,0]))
         # update global non-match list
         nonMatchA.append(currentBatchNA)
         nonMatchB.append(currentBatchNB)
@@ -301,62 +383,6 @@ class ContrastiveLossL2(torch.nn.Module):
         # return global loss, matching loss and non-match loss
         return contrastiveLossSum, matchLossSum, nonMatchLossSum
 
-# Contrastive loss function
-class OriginalContrastiveLoss(torch.nn.Module):
-    def __init__(self, margin=0.5, nonMatchLossWeight=1.0):
-        super(OriginalContrastiveLoss, self).__init__()
-        self.margin = margin
-        self.nonMatchLossWeight = nonMatchLossWeight
-    def forward(self, outA, outB, matchA, matchB, nonMatchA, nonMatchB, hardNegative, device):
-        # ----------------------------------------------------------------------------------
-        # INPUT :
-        # - Network output tensor outA and outB with the shape [B,H*W,C]
-        # - MatchA/MatchB and nonMatchA/nonMatchB with shape [B,NbMatch]
-        # - Compute and divide by the hard negative value in the nonMatch Loss
-        # - Device where to run the loss function
-        # Each Match/non-Match keypoint as been vectorize [x,y]->W*x+y
-        # OUPUT :
-        # - Loss sum from matching loss and non-match loss
-        # ---------------------------------------------------------------------------------
-        contrastiveLossSum = 0
-        matchLossSum = 0
-        nonMatchLossSum = 0
-        # for every element in the batch
-        for b in range(0, outA.size()[0]):
-            # get the number of match/non-match (tensor float)
-            nbMatch = len(matchA[b])
-            nbNonMatch = len(nonMatchA[b])
-            # create a tensor with the listed matched descriptors in the estimated descriptors map (net output)
-            matchADes = torch.index_select(outA[b], 1, torch.Tensor.int(torch.Tensor(matchA[b])).to(device))
-            matchBDes = torch.index_select(outB[b], 1, torch.Tensor.int(torch.Tensor(matchB[b])).to(device))
-            # create a tensor with the listed non-matched descriptors in the estimated descriptors map (net output)
-            nonMatchADes = torch.index_select(outA[b], 1, torch.Tensor.int(torch.Tensor(nonMatchA[b])).to(device))
-            nonMatchBDes = torch.index_select(outB[b], 1, torch.Tensor.int(torch.Tensor(nonMatchB[b])).to(device))
-            # calculate match loss (L2 distance)
-            matchLoss = (1.0/nbMatch) * (matchADes - matchBDes).pow(2).sum()
-            # calculate non-match loss (L2 distance with margin)
-            nonMatchloss = (nonMatchADes - nonMatchBDes).pow(2).sum(dim=2)
-            nonMatchloss = torch.add(torch.neg(nonMatchloss), self.margin)
-            zerosVec = torch.zeros_like(nonMatchloss)
-            nonMatchloss = torch.max(zerosVec, nonMatchloss)
-            # Hard negative scaling (pixelwise)
-            if hardNegative==True:
-                # compute hard negative
-                hardNegativeNonMatch = len(torch.nonzero(nonMatchloss))
-                # final non_match loss with Hard negative scaling
-                nonMatchloss = self.nonMatchLossWeight * (1.0/hardNegativeNonMatch) * nonMatchloss.sum()
-            else:
-                # final non_match loss
-                nonMatchloss = self.nonMatchLossWeight * (1.0/nbNonMatch) * nonMatchloss.sum()
-            # compute contrastive loss
-            contrastiveLoss = matchLoss + nonMatchloss
-            # update final losses
-            contrastiveLossSum += contrastiveLoss
-            matchLossSum += matchLoss
-            nonMatchLossSum += nonMatchloss
-        # return global loss, matching loss and non-match loss
-        return contrastiveLossSum, matchLossSum, nonMatchLossSum
-
 # Set the training/inference device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 if torch.cuda.is_available():
@@ -366,15 +392,15 @@ if torch.cuda.is_available():
 modelPath = '/home/neurotronics/Bureau/DDN/DDN_Model/DNN'
 # Init DDN Network, Adam optimizer, scheduler and loss function
 descriptorSize = 16
-batchSize = 2
-nbEpoch = 1
+batchSize = 1
+nbEpoch = 50
 DDN = VisualDescriptorNet(DescriptorDim=descriptorSize, OutputNorm=False).to(device)
 print("DDN Network initialized with D =", descriptorSize)
 optimizer = optim.Adam(DDN.parameters(), lr=1.0e-4, weight_decay=1.0e-4)
 lrPower = 2
 lambda1 = lambda epoch: (1.0 - epoch / nbEpoch) ** lrPower
 scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=[lambda1])
-contrastiveLoss = ContrastiveLoss(margin=0.5, nonMatchLossWeight=1.0)
+contrastiveLoss = ContrastiveLossL2(margin=0.5, nonMatchLossWeight=1.0)
 # Init LoFTR network
 matcher = KF.LoFTR(pretrained='indoor').to(device)
 print("Matcher initialized")
@@ -386,8 +412,6 @@ trainingDataset = ImagePairDataset(ImgADir=imgAFolderTraining, ImgBDir=imgBFolde
 trainingLoader = data.DataLoader(trainingDataset, batch_size=batchSize, shuffle=False, num_workers=4)
 print("Dataset loaded !")
 
-
-i = 0
 # training / testing
 for epoch in range(0,nbEpoch):
     # Set network to trainin mode
@@ -400,11 +424,10 @@ for epoch in range(0,nbEpoch):
         inputBatchBCorr = data['image B Match'].to(device)
         inputBatchA = data['image A'].to(device)
         inputBatchB = data['image B'].to(device)
-        matchA, matchB, nonMatchA, nonMatchB = CorrespondenceGenerator(Matcher=matcher,
+        matchA, matchB, nonMatchA, nonMatchB = CorrespondenceGeneratorOld(Matcher=matcher,
                                                                        ImgA=inputBatchACorr,
                                                                        ImgB=inputBatchBCorr,
-                                                                       NumberNonMatchPerMatch=150,
-                                                                       SampleB=False)
+                                                                       NumberNonMatchPerMatch=150)
         noMatch = False
         for b in range(batchSize):
             print(len(matchA[b]), "Match found and", len(nonMatchA[b]), "Non-Match Found in imageA =",b)
@@ -442,9 +465,6 @@ for epoch in range(0,nbEpoch):
             # Plot some shit
             print("Epoch N°", epoch, "current Loss = ", loss.item())
             print("Current loss =", loss.item(), "Matching Loss =", MLoss.item(), "Non-Matching Loss", MNLoss.item())
-            i+=1
-            if i == 50:
-                break;
         else:
             print("No Match ! Continuing training without this sample !")
             continue
