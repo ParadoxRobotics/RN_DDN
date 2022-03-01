@@ -129,12 +129,12 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
                 currentBatchNA.append(currentBatchA[i])
                 currentBatchNAuv.append(currentBatchAuv[i])
         # generate sample point
-        rd = np.random.rand(NumberNonMatchPerMatch*len(currentBatchNA), 2)
+        rd = np.random.rand(len(currentBatchNA), 2)
         rd[:,0] = rd[:,0]*W
         rd[:,1] = rd[:,1]*H
         rd = np.floor(rd)
         # update non-match given distance contraint
-        for m in range(nbsample*len(currentBatchNA)):
+        for m in range(len(currentBatchNA)):
             if np.absolute(rd[m,0]-currentBatchNAuv[m][0]) > nonMatchTh and np.absolute(rd[m,1]-currentBatchNAuv[m][1]) > nonMatchTh:
                 # update Linear nonMatchB
                 currentBatchNB.append(W * int(rd[m,1]) + int(rd[m,0]))
