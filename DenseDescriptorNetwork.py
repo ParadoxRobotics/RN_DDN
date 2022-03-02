@@ -355,15 +355,15 @@ class ContrastiveLossL2(torch.nn.Module):
                     nonMatchloss = self.nonMatchLossWeight * (1.0/hardNegativeNonMatch) * (nonMatchloss*L2PixelLoss).sum()
                 else:
                     # final non_match loss with hard negative scaling
-                    nonMatchloss = self.nonMatchLossWeight * (1.0/hardNegativeNonMatch) * (L2PixelLoss*nonMatchloss).sum()
+                    nonMatchloss = self.nonMatchLossWeight * (1.0/hardNegativeNonMatch) * nonMatchloss.sum()
             else:
                 if L2NonMatch ==True:
                     # final non_match loss with L2 pixel loss
                     L2PixelLoss = L2PixelLoss(matchB=torch.Tensor.int(torch.Tensor(matchB[b])).to(device), nonMatchB=torch.Tensor.int(torch.Tensor(nonMatchB[b])).to(device), Mpixel=50, H=480, W=640)
-                    nonMatchloss = self.nonMatchLossWeight * (1.0/nbNonMatch) * nonMatchloss.sum()
+                    nonMatchloss = self.nonMatchLossWeight * (1.0/nbNonMatch) * (L2PixelLoss*nonMatchloss).sum()
                 else:
                     # final non_match loss
-                    nonMatchloss = self.nonMatchLossWeight * (1.0/nbNonMatch) * (L2PixelLoss*nonMatchloss).sum()
+                    nonMatchloss = self.nonMatchLossWeight * (1.0/nbNonMatch) * nonMatchloss.sum()
             # compute contrastive loss
             contrastiveLoss = matchLoss + nonMatchloss
             # update final losses
