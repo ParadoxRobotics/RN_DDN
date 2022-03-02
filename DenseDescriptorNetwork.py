@@ -300,7 +300,7 @@ def L2PixelLoss(matchB, nonMatchB, Mpixel=50, H, W):
     # ---------------------------------------------------------------------------------
     # Compute the ratio between non-Match and match and non-match ground-truth
     nonMatchPMatch = nonMatchB.size()[0]/matchB.size()[0]
-    GTPixelNonMatchB = torch.t(matchB.repeat(nonMatchPMatch, 1)).contiguous().view(-1,1)
+    GTPixelNonMatchB = torch.t(matchB.repeat(int(nonMatchPMatch), 1)).contiguous().view(-1,1)
     # Convert linear match/nonMatch to pixel space UV
     GTUVB = Linear2UV(GTPixelNonMatchB, H, W)
     sampleUVB = Linear2UV(nonMatchB.unsqueeze(1), H, W)
@@ -351,7 +351,7 @@ class ContrastiveLossL2(torch.nn.Module):
                 print("Number Hard-Negative =", hardNegativeNonMatch)
                 if L2NonMatch ==True:
                     # final non_match loss with hard negative scaling and L2 pixel loss
-                    L2PixelLoss = L2PixelLoss(matchB=matchB, nonMatchB=nonMatchB, Mpixel=50, H=480, W=640)
+                    L2PixelLoss = L2PixelLoss(matchB=torch.Tensor.int(torch.Tensor(matchB[b])).to(device), nonMatchB=torch.Tensor.int(torch.Tensor(nonMatchB[b])).to(device), Mpixel=50, H=480, W=640)
                     nonMatchloss = self.nonMatchLossWeight * (1.0/hardNegativeNonMatch) * (nonMatchloss*L2PixelLoss).sum()
                 else:
                     # final non_match loss with hard negative scaling
@@ -359,11 +359,11 @@ class ContrastiveLossL2(torch.nn.Module):
             else:
                 if L2NonMatch ==True:
                     # final non_match loss with L2 pixel loss
-                    L2PixelLoss = L2PixelLoss(matchB=matchB, nonMatchB=nonMatchB, Mpixel=50, H=480, W=640)
+                    L2PixelLoss = L2PixelLoss(matchB=torch.Tensor.int(torch.Tensor(matchB[b])).to(device), nonMatchB=torch.Tensor.int(torch.Tensor(nonMatchB[b])).to(device), Mpixel=50, H=480, W=640)
                     nonMatchloss = self.nonMatchLossWeight * (1.0/nbNonMatch) * nonMatchloss.sum()
                 else:
                     # final non_match loss
-                    nonMatchloss = self.nonMatchLossWeight * (1.0/nbNonMatch) * nonMatchloss.sum()
+                    nonMatchloss = self.nonMatchLossWeight * (1.0/nbNonMatch) * (L2PixelLoss*nonMatchloss).sum()
             # compute contrastive loss
             contrastiveLoss = matchLoss + nonMatchloss
             # update final losses
