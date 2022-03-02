@@ -274,59 +274,38 @@ class VisualDescriptorNet(nn.Module):
         # return descriptor
         return out
 
-# Contrastive loss function with hard-negative mining
-class ContrastiveLoss(torch.nn.Module):
-    def __init__(self, margin=0.5, nonMatchLossWeight=1.0):
-        super(ContrastiveLoss, self).__init__()
-        self.margin = margin
-        self.nonMatchLossWeight = nonMatchLossWeight
-    def forward(self, outA, outB, matchA, matchB, nonMatchA, nonMatchB, hardNegative, device):
-        # ----------------------------------------------------------------------------------
-        # INPUT :
-        # - Network output tensor outA and outB with the shape [B,H*W,C]
-        # - MatchA/MatchB and nonMatchA/nonMatchB with shape [B,NbMatch]
-        # - Compute and divide by the hard negative value in the nonMatch Loss
-        # - Device where to run the loss function
-        # Each Match/non-Match keypoint as been vectorize [x,y]->W*x+y
-        # OUPUT :
-        # - Loss sum from matching loss and non-match loss
-        # ---------------------------------------------------------------------------------
-        contrastiveLossSum = 0
-        matchLossSum = 0
-        nonMatchLossSum = 0
-        # for every element in the batch
-        for b in range(0,outA.size()[0]):
-            # get the number of match/non-match (tensor float)
-            nbMatch = len(matchA[b])
-            nbNonMatch = len(nonMatchA[b])
-            # create a tensor with the listed matched descriptors in the estimated descriptors map (net output)
-            matchADes = torch.index_select(outA[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(matchA[b])).to(device)).unsqueeze(0)
-            matchBDes = torch.index_select(outB[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(matchB[b])).to(device)).unsqueeze(0)
-            # create a tensor with the listed non-matched descriptors in the estimated descriptors map (net output)
-            nonMatchADes = torch.index_select(outA[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(nonMatchA[b])).to(device)).unsqueeze(0)
-            nonMatchBDes = torch.index_select(outB[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(nonMatchB[b])).to(device)).unsqueeze(0)
-            # calculate match loss (L2 distance)
-            matchLoss = (1.0/nbMatch) * (matchADes - matchBDes).pow(2).sum()
-            # calculate non-match loss
-            zerosVec = torch.zeros_like(nonMatchADes)
-            pixelwiseNonMatchLoss = torch.max(zerosVec, self.margin-((nonMatchADes - nonMatchBDes).pow(2)))
-            # Hard negative scaling (pixelwise)
-            if hardNegative==True:
-                hardNegativeNonMatch = len(torch.nonzero(pixelwiseNonMatchLoss))
-                print("Number Hard-Negative =", hardNegativeNonMatch)
-                # final non_match loss with hard negative scaling
-                nonMatchloss = self.nonMatchLossWeight * (1.0/hardNegativeNonMatch) * pixelwiseNonMatchLoss.sum()
-            else:
-                # final non_match loss
-                nonMatchloss = self.nonMatchLossWeight * (1.0/nbNonMatch) * pixelwiseNonMatchLoss.sum()
-            # compute contrastive loss
-            contrastiveLoss = matchLoss + nonMatchloss
-            # update final losses
-            contrastiveLossSum += contrastiveLoss
-            matchLossSum += matchLoss
-            nonMatchLossSum += nonMatchloss
-        # return global loss, matching loss and non-match loss
-        return contrastiveLossSum, matchLossSum, nonMatchLossSum
+# convert linear tensor index to UV pixel position
+def Linear2UV(Index, H, W):
+    # ---------------------------------------------------------------------------------
+    # INPUT :
+    # - Linear Tensor index with shape [NbMatch, 1]
+    # - Image shape (H,W)
+    # OUPUT :
+    # - UV Tensor with with shape [NbMatch, 2]
+    # ---------------------------------------------------------------------------------
+    UVIndex = Index.repeat(1,2)
+    UVIndex[:,0] = UVIndex[:,0]%W
+    UVIndex[:,1] = UVIndex[:,1]/H
+    return UVIndex
+
+# Compute L2 loss in pixel space given matchB and non-matchB
+def L2PixelLoss(matchB, nonMatchB, Mpixel=50, H, W):
+    # ---------------------------------------------------------------------------------
+    # INPUT :
+    # - matchB with shape [nbMatchB]
+    # - nonMatchB with shape [nbNonMatchB]
+    # - Pixel Margin (50 in the papers)
+    # OUPUT :
+    # - L2 loss weight in the pixel space
+    # ---------------------------------------------------------------------------------
+    # Compute the ratio between non-Match and match and non-match ground-truth
+    nonMatchPMatch = nonMatchB.size()[0]/matchB.size()[0]
+    GTPixelNonMatchB = torch.t(matchB.repeat(nonMatchPMatch, 1)).contiguous().view(-1,1)
+    # Convert linear match/nonMatch to pixel space UV
+    GTUVB = Linear2UV(GTPixelNonMatchB, H, W)
+    sampleUVB = Linear2UV(nonMatchB.unsqueeze(1), H, W)
+    # compute L2 loss
+    return (1.0/Mpixel)*torch.clamp((GTUVB - sampleUVB).float().norm(2,1), max=Mpixel)
 
 # Contrastive loss function with hard-negative mining (L2 VARIATION)
 class ContrastiveLossL2(torch.nn.Module):
@@ -334,12 +313,13 @@ class ContrastiveLossL2(torch.nn.Module):
         super(ContrastiveLossL2, self).__init__()
         self.margin = margin
         self.nonMatchLossWeight = nonMatchLossWeight
-    def forward(self, outA, outB, matchA, matchB, nonMatchA, nonMatchB, hardNegative, device):
+    def forward(self, outA, outB, matchA, matchB, nonMatchA, nonMatchB, hardNegative, L2NonMatch, device):
         # ----------------------------------------------------------------------------------
         # INPUT :
         # - Network output tensor outA and outB with the shape [B,H*W,C]
         # - MatchA/MatchB and nonMatchA/nonMatchB with shape [B,NbMatch]
         # - Compute and divide by the hard negative value in the nonMatch Loss
+        # - Compute the L2 pixel loss for the weighting of the non match loss
         # - Device where to run the loss function
         # Each Match/non-Match keypoint as been vectorize [x,y]->W*x+y
         # OUPUT :
@@ -369,11 +349,21 @@ class ContrastiveLossL2(torch.nn.Module):
                 nonMatchloss = torch.clamp(self.margin - nonMatchloss, min=0).pow(2)
                 hardNegativeNonMatch = len(torch.nonzero(nonMatchloss))
                 print("Number Hard-Negative =", hardNegativeNonMatch)
-                # final non_match loss with hard negative scaling
-                nonMatchloss = self.nonMatchLossWeight * (1.0/hardNegativeNonMatch) * nonMatchloss.sum()
+                if L2NonMatch ==True:
+                    # final non_match loss with hard negative scaling and L2 pixel loss
+                    L2PixelLoss = L2PixelLoss(matchB=matchB, nonMatchB=nonMatchB, Mpixel=50, H=480, W=640)
+                    nonMatchloss = self.nonMatchLossWeight * (1.0/hardNegativeNonMatch) * (nonMatchloss*L2PixelLoss).sum()
+                else:
+                    # final non_match loss with hard negative scaling
+                    nonMatchloss = self.nonMatchLossWeight * (1.0/hardNegativeNonMatch) * (L2PixelLoss*nonMatchloss).sum()
             else:
-                # final non_match loss
-                nonMatchloss = self.nonMatchLossWeight * (1.0/nbNonMatch) * nonMatchloss.sum()
+                if L2NonMatch ==True:
+                    # final non_match loss with L2 pixel loss
+                    L2PixelLoss = L2PixelLoss(matchB=matchB, nonMatchB=nonMatchB, Mpixel=50, H=480, W=640)
+                    nonMatchloss = self.nonMatchLossWeight * (1.0/nbNonMatch) * nonMatchloss.sum()
+                else:
+                    # final non_match loss
+                    nonMatchloss = self.nonMatchLossWeight * (1.0/nbNonMatch) * nonMatchloss.sum()
             # compute contrastive loss
             contrastiveLoss = matchLoss + nonMatchloss
             # update final losses
@@ -456,6 +446,7 @@ for epoch in range(0,nbEpoch):
                                                   nonMatchA=nonMatchA,
                                                   nonMatchB=nonMatchB,
                                                   hardNegative=True,
+                                                  L2NonMatch=True,
                                                   device=device)
             print("Backpropagate and optimize")
             # Backpropagate loss
