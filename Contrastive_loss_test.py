@@ -51,6 +51,61 @@ class ContrastiveLoss(torch.nn.Module):
 
         return contrastive_loss, match_loss, non_match_loss
 
+   
+# Contrastive loss function with hard-negative mining
+class ContrastiveLossNew(torch.nn.Module):
+    def __init__(self, margin=0.5, nonMatchLossWeight=1.0):
+        super(ContrastiveLossNew, self).__init__()
+        self.margin = margin
+        self.nonMatchLossWeight = nonMatchLossWeight
+    def forward(self, outA, outB, matchA, matchB, nonMatchA, nonMatchB, hardNegative, device):
+        # ----------------------------------------------------------------------------------
+        # INPUT :
+        # - Network output tensor outA and outB with the shape [B,H*W,C]
+        # - MatchA/MatchB and nonMatchA/nonMatchB with shape [B,NbMatch]
+        # - Compute and divide by the hard negative value in the nonMatch Loss
+        # - Device where to run the loss function
+        # Each Match/non-Match keypoint as been vectorize [x,y]->W*x+y
+        # OUPUT :
+        # - Loss sum from matching loss and non-match loss
+        # ---------------------------------------------------------------------------------
+        contrastiveLossSum = 0
+        matchLossSum = 0
+        nonMatchLossSum = 0
+        # for every element in the batch
+        for b in range(0,outA.size()[0]):
+            # get the number of match/non-match (tensor float)
+            nbMatch = len(matchA[b])
+            nbNonMatch = len(nonMatchA[b])
+            # create a tensor with the listed matched descriptors in the estimated descriptors map (net output)
+            matchADes = torch.index_select(outA[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(matchA[b])).to(device)).unsqueeze(0)
+            matchBDes = torch.index_select(outB[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(matchB[b])).to(device)).unsqueeze(0)
+            # create a tensor with the listed non-matched descriptors in the estimated descriptors map (net output)
+            nonMatchADes = torch.index_select(outA[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(nonMatchA[b])).to(device)).unsqueeze(0)
+            nonMatchBDes = torch.index_select(outB[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(nonMatchB[b])).to(device)).unsqueeze(0)
+            # calculate match loss (L2 distance)
+            matchLoss = (1.0/nbMatch) * (matchADes - matchBDes).pow(2).sum()
+            # calculate non-match loss
+            zerosVec = torch.zeros_like(nonMatchADes)
+            pixelwiseNonMatchLoss = torch.max(zerosVec, self.margin-((nonMatchADes - nonMatchBDes).pow(2)))
+            # Hard negative scaling (pixelwise)
+            if hardNegative==True:
+                hardNegativeNonMatch = len(torch.nonzero(pixelwiseNonMatchLoss))
+                print("Number Hard-Negative =", hardNegativeNonMatch)
+                # final non_match loss with hard negative scaling
+                nonMatchloss = self.nonMatchLossWeight * (1.0/hardNegativeNonMatch) * pixelwiseNonMatchLoss.sum()
+            else:
+                # final non_match loss
+                nonMatchloss = self.nonMatchLossWeight * (1.0/nbNonMatch) * pixelwiseNonMatchLoss.sum()
+            # compute contrastive loss
+            contrastiveLoss = matchLoss + nonMatchloss
+            # update final losses
+            contrastiveLossSum += contrastiveLoss
+            matchLossSum += matchLoss
+            nonMatchLossSum += nonMatchloss
+        # return global loss, matching loss and non-match loss
+        return contrastiveLossSum, matchLossSum, nonMatchLossSum    
+
 # init cost function for training
 cost_function = ContrastiveLoss()
 
