@@ -76,7 +76,7 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
     # match/non-match = image_width * row + column
     # ---------------------------------------------------------------------------------
     # Non match distance threshold
-    nonMatchTh = 1.0
+    nonMatchTh = 1
     # Get batch size
     batchSize = ImgA.size()[0]
     H = ImgA.size()[2]
@@ -108,6 +108,7 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
         currentBatchAuv = []
         currentBatchBuv = []
         currentBatchNAuv = []
+        currentBatchNBuv = []
         # matchA / matchB are extract from keypoints at a specific batch
         for i in range(batchIndexKeyoints.shape[0]):
             if batchIndexKeyoints[i] == batch:
@@ -118,8 +119,8 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
                 currentBatchA.append(W * int(kp_A[i,1]) + int(kp_A[i,0]))
                 currentBatchB.append(W * int(kp_B[i,1]) + int(kp_B[i,0]))
         # update global match list
-        matchA.append(currentBatchA)
-        matchB.append(currentBatchB)
+        matchA.append(currentBatchAuv)
+        matchB.append(currentBatchBuv)
         # non-matchA / non-matchB are generate from matchB for every keypoints
         # in matchA
         # Copy matchA in respect to the number of NumberNonMatchPerMatch
@@ -137,6 +138,7 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
         for m in range(len(currentBatchNA)):
             if np.absolute(rd[m,0]-currentBatchNAuv[m][0]) > nonMatchTh and np.absolute(rd[m,1]-currentBatchNAuv[m][1]) > nonMatchTh:
                 # update Linear nonMatchB
+                currentBatchNBuv.append((int(rd[m,0]), int(rd[m,1])))
                 currentBatchNB.append(W * int(rd[m,1]) + int(rd[m,0]))
             else:
                 # modify non-match in accordance to the image size
@@ -150,12 +152,13 @@ def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
                     rdval[0,1] = rdval[0,1]*H
                     rdval = np.floor(rdval)
                 # update Linear nonMatchB
+                currentBatchNBuv.append((int(rd[0,0]), int(rd[0,1])))
                 currentBatchNB.append(W * int(rdval[0,1]) + int(rdval[0,0]))
         # update global non-match list
-        nonMatchA.append(currentBatchNA)
-        nonMatchB.append(currentBatchNB)
+        nonMatchA.append(currentBatchNAuv)
+        nonMatchB.append(currentBatchNBuv)
     # return the batched match/non-match
-    return matchA, matchB, nonMatchA, nonMatchB, kp_A, kp_B
+    return matchA, matchB, nonMatchA, nonMatchB
 
 # Set the training/inference device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -190,7 +193,26 @@ def imshow(inp, title, tel):
 for data in trainingLoader:
     inputBatchACorr = data['image A Match']
     inputBatchBCorr = data['image B Match']
-    matchA, matchB, nonMatchA, nonMatchB, mkpts0, mkpts1 = CorrespondenceGenerator(Matcher=matcher,
-                                                                   ImgA=inputBatchACorr.to(device),
-                                                                   ImgB=inputBatchBCorr.to(device),
-                                                                   NumberNonMatchPerMatch=150)
+    matchA, matchB, nonMatchA, nonMatchB  = CorrespondenceGenerator(Matcher=matcher,
+                                                                    ImgA=inputBatchACorr.to(device),
+                                                                    ImgB=inputBatchBCorr.to(device),
+                                                                    NumberNonMatchPerMatch=150)
+    imgA = (inputBatchACorr*255).squeeze(0).permute(1,2,0).cpu().numpy().astype(np.uint8).copy()
+    imgB = (inputBatchBCorr*255).squeeze(0).permute(1,2,0).cpu().numpy().astype(np.uint8).copy()
+    for i in range(len(matchA[0])):
+        ptA = matchA[0][i]
+        ptB = matchB[0][i]
+        cv2.circle(imgA, ptA, 5, (255,0,0), -1)
+        cv2.circle(imgB, ptB, 5, (255,0,0), -1)
+
+    for i in range(0,150):
+        ptA = nonMatchA[0][i]
+        ptB = nonMatchB[0][i]
+        cv2.circle(imgA, ptA, 5, (0,255,0), -1)
+        cv2.circle(imgB, ptB, 5, (0,255,0), -1)
+
+
+    f, axarr = plt.subplots(1,2)
+    axarr[0].imshow(imgA)
+    axarr[1].imshow(imgB)
+    plt.show()
