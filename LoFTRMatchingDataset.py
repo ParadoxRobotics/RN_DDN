@@ -64,6 +64,74 @@ class ImagePairDataset(data.Dataset):
         return pair
 
 # Find correspondences between 2 images and generate non-matches from it
+def CorrespondenceGeneratorTest(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
+    # ----------------------------------------------------------------------------------
+    # INPUT :
+    # - The matcher must be LoFTR type neural network
+    # - ImgA and ImgB must be a RGB/255 tensor with shape [B,C,H,W]
+    # - NumberNonMatchPerMatch is the number of non-match in imageB for each good
+    # match in A that need to be generated
+    # - SampleB is a flag that select the non-match sampling mode : True sample from
+    # current B matches; False sample randomly from the whole picture
+    # OUPUT :
+    # - matchA / matchB / nonMatchA / nonMatchB tensor with shape [B, nb_match]
+    # match/non-match = image_width * row + column
+    # ---------------------------------------------------------------------------------
+    # Get batch size
+    batchSize = ImgA.size()[0]
+    H = ImgA.size()[2]
+    W = ImgA.size()[3]
+    # Create a dict for the 2 images in grayscale
+    inputDict = {"image0": K.color.rgb_to_grayscale(ImgA),
+                 "image1": K.color.rgb_to_grayscale(ImgB)}
+    # Find correspondences using the LoFTR network
+    with torch.no_grad():
+        correspondences = Matcher(inputDict)
+    # get keypoints and batch indexes
+    kp_A = correspondences['keypoints0'].cpu().numpy()
+    kp_B = correspondences['keypoints1'].cpu().numpy()
+    batchIndexKeyoints = correspondences['batch_indexes'].cpu().numpy()
+    print(kp_A.shape[0],"Correspondences found using LoFTR in this batch")
+    # create empty list
+    matchA = []
+    matchB = []
+    nonMatchA = []
+    nonMatchB = []
+    # create matchA/matchB and non-matchA/non-matchB
+    for batch in range(0, batchSize):
+        currentBatchA = []
+        currentBatchB = []
+        currentBatchNA = []
+        currentBatchNB = []
+        # matchA / matchB are extract from keypoints at a specific batch
+        for i in range(batchIndexKeyoints.shape[0]):
+            if batchIndexKeyoints[i] == batch:
+                currentBatchA.append(W * int(kp_A[i,1]) + int(kp_A[i,0]))
+                currentBatchB.append(W * int(kp_B[i,1]) + int(kp_B[i,0]))
+            else:
+                continue
+        # update global match list
+        matchA.append(currentBatchA)
+        matchB.append(currentBatchB)
+        # non-matchA / non-matchB are generate from matchB for every keypoints
+        # in matchA
+        for i in range(0, NumberNonMatchPerMatch):
+            for d in range(0, len(currentBatchA):
+                currentBatchNA.append(currentBatchA[d])
+                # generate sample
+                rdUVW = random.randint(0, (W*H)-1)
+                # check if the sample is to close to the match
+                while rdUVW == currentBatchB[i]:
+                    rdUVW = random.randint(0, (W*H)-1)
+                # append data
+                currentBatchNB.append(rdUVW)
+        # update global non-match list
+        nonMatchA.append(currentBatchNA)
+        nonMatchB.append(currentBatchNB)
+    # return the batched match/non-match
+    return matchA, matchB, nonMatchA, nonMatchB    
+
+# Find correspondences between 2 images and generate non-matches from it
 def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
     # ----------------------------------------------------------------------------------
     # INPUT :
