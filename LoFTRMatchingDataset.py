@@ -78,6 +78,7 @@ def CorrespondenceGeneratorTest(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
     # match/non-match = image_width * row + column
     # ---------------------------------------------------------------------------------
     # Get batch size
+    mathTh = 1.0
     batchSize = ImgA.size()[0]
     H = ImgA.size()[2]
     W = ImgA.size()[3]
@@ -121,7 +122,7 @@ def CorrespondenceGeneratorTest(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
                 # generate sample
                 rdUVW = random.randint(0, (W*H)-1)
                 # check if the sample is to close to the match
-                while rdUVW == currentBatchB[i]:
+                while np.absolute((rdUVW%W)-(currentBatchB[d]%W)) <= mathTh and np.absolute((rdUVW/W)-(currentBatchB[d]/W)) <= mathTh:
                     rdUVW = random.randint(0, (W*H)-1)
                 # append data
                 currentBatchNB.append(rdUVW)
@@ -129,7 +130,7 @@ def CorrespondenceGeneratorTest(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
         nonMatchA.append(currentBatchNA)
         nonMatchB.append(currentBatchNB)
     # return the batched match/non-match
-    return matchA, matchB, nonMatchA, nonMatchB    
+    return matchA, matchB, nonMatchA, nonMatchB
 
 # Find correspondences between 2 images and generate non-matches from it
 def CorrespondenceGenerator(Matcher, ImgA, ImgB, NumberNonMatchPerMatch):
