@@ -209,7 +209,7 @@ class ContrastiveLossL2(torch.nn.Module):
             nonMatchADes = torch.index_select(outA[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(nonMatchA[b])).to(device))
             nonMatchBDes = torch.index_select(outB[b].unsqueeze(0), 1, torch.Tensor.int(torch.Tensor(nonMatchB[b])).to(device))
             # calculate match loss (L2 distance)
-            matchLoss = (1.0/nbMatch) * (matchADes - matchBDes).pow(2).sum()
+            matchLoss = (1.0/nbMatch) * (matchADes - matchBDes).norm(2, 2).pow(2).sum()
             # calculate non-match loss (L2 distance with margin)
             nonMatchloss = (nonMatchADes - nonMatchBDes).norm(2, 2)
             nonMatchloss = torch.clamp(self.margin - nonMatchloss, min=0).pow(2)
@@ -235,18 +235,6 @@ class ContrastiveLossL2(torch.nn.Module):
         # return global loss, matching loss and non-match loss
         return contrastiveLossSum, matchLossSum, nonMatchLossSum
 
-def imshow(inp, title=None):
-    """Imshow for Tensor."""
-    inp = inp.cpu().numpy().transpose((1, 2, 0))
-    mean = np.array([0.485, 0.456, 0.406])
-    std = np.array([0.229, 0.224, 0.225])
-    inp = std * inp + mean
-    inp = np.clip(inp, 0, 1)
-    plt.imshow(inp)
-    if title is not None:
-        plt.title(title)
-    plt.pause(0.001)  # pause a bit so that plots are updated
-
 # Set the training/inference device
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 if torch.cuda.is_available():
@@ -257,12 +245,13 @@ modelPath = '/home/neurotronics/Bureau/DDN/DDN_Model/DNN'
 # Init DDN Network, Adam optimizer, scheduler and loss function
 descriptorSize = 16
 batchSize = 2
-nbEpoch = 50
+lr_find_epochs = 2
 dataAugmentation=True
 DDN = VisualDescriptorNet(DescriptorDim=descriptorSize).to(device)
 print("DDN Network initialized with D =", descriptorSize)
-optimizer = optim.SGD(DDN.parameters(), lr=2e-2, weight_decay=1.0e-4)
-scheduler = lr_scheduler.CyclicLR(optimizer, base_lr=2e-3, max_lr=2e-2, step_size_up=1562)
+start_lr = 1e-7
+end_lr = 1
+optimizer = optim.SGD(DDN.parameters(), lr=start_lr, weight_decay=1.0e-4)
 contrastiveLoss = ContrastiveLossL2(margin=1.13, nonMatchLossWeight=1.0)
 # Init LoFTR network
 matcher = KF.LoFTR(pretrained='indoor').to(device)
@@ -274,21 +263,22 @@ trainingDataset = ImagePairDataset(ImgADir=imgAFolderTraining, ImgBDir=imgBFolde
 # Init dataloader for training and testing
 trainingLoader = data.DataLoader(trainingDataset, batch_size=batchSize, shuffle=False, num_workers=4)
 print("Dataset loaded !")
+lr_lambda = lambda x: math.exp(x * math.log(end_lr / start_lr) / (lr_find_epochs * len(trainingLoader)))
+scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
-epochLoss = []
-epochMatchLoss = []
-epochNonMatchLoss = []
+lr_find_loss = []
+lr_find_lr = []
+smoothing = 0.05
+iteration = 0
 # training / testing
-for epoch in range(0,nbEpoch):
+for epoch in range(0,lr_find_epochs):
     # Training on the dataset
-    iteration = 0
     generalLoss = 0
     generalMatchLoss = 0
     generalNonMatchLoss = 0
     for data in trainingLoader:
-        # Set network to training mode
+        # Set network to trainin mode
         DDN.train()
-        # reinit augmentation
         rotationAugmentation=False
         # Compute match/non-match
         print("Finding Correspondences...")
@@ -300,7 +290,6 @@ for epoch in range(0,nbEpoch):
             if random.random() > 0.6:
                 rotationAugmentation=True
                 inputBatchB = K.geometry.transform.rot180(inputBatchB)
-                print("Rotation!")
         # LoFTR match/non-match generator
         matchA, matchB, nonMatchA, nonMatchB = CorrespondenceGeneratorLinear(Matcher=matcher,
                                                                              ImgA=inputBatchACorr,
@@ -344,36 +333,24 @@ for epoch in range(0,nbEpoch):
             loss.backward()
             # Update weight
             optimizer.step()
-            # Plot some shit
-            print("Epoch N°", epoch, "current Loss = ", loss.item(), "at iteration =", iteration)
-            print("Current loss =", loss.item(), "Matching Loss =", MLoss.item(), "Non-Matching Loss", MNLoss.item())
-            print("################################################################################################################")
-            generalLoss += loss.item()
-            generalMatchLoss += MLoss.item()
-            generalNonMatchLoss += MNLoss.item()
+
+            # Update LR
+            scheduler.step()
+            lr_step = optimizer.state_dict()["param_groups"][0]["lr"]
+            lr_find_lr.append(lr_step)
+
+            # smooth the loss
+            if iteration==0:
+              lr_find_loss.append(loss.item())
+            else:
+              loss = smoothing  * loss + (1 - smoothing) * lr_find_loss[-1]
+              lr_find_loss.append(loss.item())
+
             iteration += 1
         else:
             print("No Match ! Continuing training without this sample !")
             continue
-        # update learning rate
-        scheduler.step()
-    # store loss for this epoch
-    epochLoss.append(generalLoss/iteration)
-    epochMatchLoss.append(generalMatchLoss/iteration)
-    epochNonMatchLoss.append(generalNonMatchLoss/iteration)
-    print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
-    print("GLOBAL LOSS = ", epochLoss)
-    print("GLOBAL MATCHING LOSS = ", epochMatchLoss)
-    print("GLOBAL NON-MATCH LOSS = ", epochNonMatchLoss)
-    print("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
-    # Saving state dict and weight matrix of the model
-    torch.save(DDN.state_dict(), modelPath)
-    print("Current Model dict saved")
-    # scheduler step (exponential)
-    #scheduler.step()
-
-# Saving state dict and weight matrix of the model
-torch.save(DDN.state_dict(), modelPath)
-print("Current Model dict saved")
-# Print epoch loss
-print(epochLoss)
+print(lr_find_lr)
+print(lr_find_loss)
+plt.plot(lr_find_lr, lr_find_loss)
+plt.show()
