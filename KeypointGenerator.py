@@ -18,18 +18,16 @@ import cv2
 import matplotlib.pyplot as plt
 # Neural network Torch lib
 import torch
-from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
-from torch.optim import lr_scheduler
 import torch.utils.data as data
 from torchvision import datasets, transforms, utils
 from torchvision.io import read_image
-from ResNetModel import * # custom ResNet model
 # Kornia computer vision differential lib
 import kornia as K
 import kornia.feature as KF
+# for annotation data (keypoints)
+import orjson
 
 # Image pair dataloader
 class ImagePairDataset(data.Dataset):
@@ -117,16 +115,40 @@ print("Matcher initialized")
 imgAFolderTraining = "/home/neurotronics/Bureau/DDN/dataset/ImgA"
 imgBFolderTraining = "/home/neurotronics/Bureau/DDN/dataset/ImgB"
 trainingDataset = ImagePairDataset(ImgADir=imgAFolderTraining, ImgBDir=imgBFolderTraining)
+# Keypoints annotation folder
+matchAFolder = "/home/neurotronics/Bureau/DDN/dataset/MatchA"
+matchBFolder = "/home/neurotronics/Bureau/DDN/dataset/MatchB"
+nonMatchAFolder = "/home/neurotronics/Bureau/DDN/dataset/NonMatchA"
+nonMatchBFolder = "/home/neurotronics/Bureau/DDN/dataset/NonMatchB"
 # Init dataloader for training and testing
 batchSize = 1
 trainingLoader = data.DataLoader(trainingDataset, batch_size=batchSize, shuffle=False, num_workers=4)
 print("Dataset loaded !")
 
-
+idx = 0
 for data in trainingLoader:
+    # get image
     inputBatchACorr = data['image A Match']
     inputBatchBCorr = data['image B Match']
+    # find correspondences
     matchA, matchB, nonMatchA, nonMatchB  = CorrespondenceGenerator(Matcher=matcher,
                                                                     ImgA=inputBatchACorr.to(device),
                                                                     ImgB=inputBatchBCorr.to(device),
                                                                     NumberNonMatchPerMatch=150)
+    # create file storing file
+    matchAFile = open(matchAFolder+"/"+str(idx)+".json","w+")
+    matchBFile = open(matchBFolder+"/"+str(idx)+".json","w+")
+    nonMatchAFile = open(nonMatchAFolder+"/"+str(idx)+".json","w+")
+    nonMatchBFile = open(nonMatchBFolder+"/"+str(idx)+".json","w+")
+    # convert list and dump it in the current json file
+    matchAFile.write(orjson.dumps(matchA))
+    matchBFile.write(orjson.dumps(matchB))
+    nonMatchAFile.write(orjson.dumps(nonMatchA))
+    nonMatchBFile.write(orjson.dumps(nonMatchB))
+    # close current json file
+    matchAFile.close()
+    matchBFile.close()
+    nonMatchAFile.close()
+    nonMatchBFile.close()
+    # increment
+    idx+=1
